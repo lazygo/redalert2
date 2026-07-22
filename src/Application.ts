@@ -1029,15 +1029,15 @@ export class Application {
     private async handleGameResLoadError(error: Error, strings: Strings, fatal: boolean = false): Promise<void> {
         let errorMessage = strings.get("ts:import_load_files_failed");
         if (error.name === "ChecksumError") {
-            const fileField = (error as any).file || '';
+            const fileField = (error as any).fileName || '';
             const template = strings.get("ts:import_checksum_mismatch");
             const replaced = template.indexOf("%s") >= 0 ?
                 template.replace(/%s/g, fileField) :
                 template + " " + fileField;
             errorMessage += "\n\n" + replaced;
         }
-        else if (error.name === "FileNotFoundError") {
-            const fileField = (error as any).file || '';
+        else if (error.name === "FileNotFoundError" || error.name === "GameResFileNotFoundError") {
+            const fileField = (error as any).fileName || '';
             const template = strings.get("ts:import_file_not_found");
             const replaced = template.indexOf("%s") >= 0 ?
                 template.replace(/%s/g, fileField) :
@@ -1084,8 +1084,8 @@ export class Application {
     }
     private async handleGameResImportError(error: Error, strings: Strings): Promise<void> {
         let errorMessage = strings.get("ts:import_failed");
-        if (error.name === "FileNotFoundError") {
-            const fileField = (error as any).file || '';
+        if (error.name === "FileNotFoundError" || error.name === "GameResFileNotFoundError") {
+            const fileField = (error as any).fileName || '';
             const template = strings.get("ts:import_file_not_found");
             const replaced = template.indexOf("%s") >= 0 ?
                 template.replace(/%s/g, fileField) :
@@ -1110,7 +1110,7 @@ export class Application {
             errorMessage += "\n\n" + strings.get("ts:import_no_web_assembly");
         }
         else if (error.name === "ChecksumError") {
-            const fileField = (error as any).file || '';
+            const fileField = (error as any).fileName || '';
             const template = strings.get("ts:import_checksum_mismatch");
             const replaced = template.indexOf("%s") >= 0 ?
                 template.replace(/%s/g, fileField) :
