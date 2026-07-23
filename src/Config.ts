@@ -120,6 +120,11 @@ export class Config {
     get botsEnabled(): boolean {
         return this.generalData.getBool("botsEnabled");
     }
+    /** WebSocket URL for remote netplay relay (empty = feature disabled). */
+    get netplayWsUrl(): string | undefined {
+        const url = this.generalData.getString("netplayWsUrl");
+        return url === "" ? undefined : url;
+    }
     get oldClientsBaseUrl(): string | undefined {
         const url = this.generalData.getString("oldClientsBaseUrl");
         return url.length > 0 ? url : undefined;

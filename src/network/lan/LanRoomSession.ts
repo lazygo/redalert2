@@ -4,7 +4,8 @@ import { GameOpts } from '@/game/gameopts/GameOpts';
 import { NO_TEAM_ID, OBS_COUNTRY_ID, RANDOM_COLOR_ID, RANDOM_COUNTRY_ID, RANDOM_START_POS } from '@/game/gameopts/constants';
 import { SlotInfo, SlotType as NetSlotType } from '@/network/gameopt/SlotInfo';
 import { LanPeerIdentity } from '@/network/lan/LanQrPayload';
-import { LanMeshAppMessage, LanMeshSession, LanMeshSnapshot } from '@/network/lan/LanMeshSession';
+import { LanMeshAppMessage, LanMeshSnapshot } from '@/network/lan/LanMeshSession';
+import { RoomTransport } from '@/network/RoomTransport';
 import { EventDispatcher } from '@/util/event';
 import { base64StringToUint8Array, uint8ArrayToBase64String } from '@/util/string';
 
@@ -56,7 +57,7 @@ export interface LanRoomState {
 }
 
 export interface LanLaunchDescriptor {
-    kind: 'lan';
+    kind: 'lan' | 'netplay';
     roomId: string;
     gameId: string;
     timestamp: number;
@@ -295,11 +296,12 @@ export class LanRoomSession {
     public readonly onLaunch = new EventDispatcher<this, LanLaunchDescriptor>();
 
     constructor(
-        private readonly meshSession: LanMeshSession,
+        private readonly meshSession: RoomTransport,
         private readonly gameModes: GameModes,
         private readonly mapFileLoader: MapFileLoader,
         private readonly mapDir?: MapDirectory,
-        private readonly mapList?: MapList
+        private readonly mapList?: MapList,
+        private readonly launchKind: 'lan' | 'netplay' = 'lan'
     ) {
         this.lastMeshSnapshot = meshSession.getSnapshot();
         this.handleMeshSnapshot = this.handleMeshSnapshot.bind(this);
@@ -424,7 +426,7 @@ export class LanRoomSession {
         }
         const self = this.meshSession.getSelf();
         const descriptor: LanLaunchDescriptor = {
-            kind: 'lan',
+            kind: this.launchKind,
             roomId: this.lastMeshSnapshot.roomId ?? '',
             gameId: generateId(),
             timestamp: Date.now(),
@@ -477,7 +479,7 @@ export class LanRoomSession {
         this.dispatchSnapshot();
     }
 
-    private handleAppMessage(entry: LanMeshAppMessage, _sender: LanMeshSession): void {
+    private handleAppMessage(entry: LanMeshAppMessage, _sender: unknown): void {
         const payload = entry.payload;
         if (!payload || typeof payload !== 'object') {
             return;

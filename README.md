@@ -76,6 +76,38 @@ bun run preview
 bun run typecheck:entry
 ```
 
+## 网络对战与 Go 一体化服务
+
+远程联机不使用 WebRTC。根目录 Go 进程同时提供：
+
+- `dist/` 静态站点
+- `/ws` WebSocket 全量中继（依赖 [`coder/websocket`](https://github.com/coder/websocket)）
+- `/health` 健康检查
+
+1. 构建前端：
+
+```bash
+bun run build
+```
+
+2. 启动服务（默认 `:8080`，静态目录 `dist`）：
+
+```bash
+go run .
+# 或
+go run . -addr :8080 -static dist
+```
+
+3. 浏览器打开 `http://127.0.0.1:8080`，主菜单进入「网络对战」。
+
+`public/config.ini`（构建进 `dist`）中的中继地址需与页面同源端口一致：
+
+```ini
+netplayWsUrl=ws://127.0.0.1:8080/ws
+```
+
+局域网联机（WebRTC 二维码）入口仍然保留，互不影响。
+
 ## 自动化回归
 
 仓库当前已经不再只依赖手点验证。`scripts/` 下维护了一组可直接执行的回归脚本，主要覆盖大厅、进图、机制和 tester 入口。

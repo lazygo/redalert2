@@ -83,6 +83,16 @@ export class HomeScreen implements Screen {
                     }
                 }
             },
+            {
+                label: '网络对战',
+                tooltip: '通过 WebSocket 中继进行远程联机',
+                onClick: () => {
+                    console.log('[HomeScreen] NetPlay Setup clicked');
+                    if (this.controller) {
+                        this.controller.pushScreen(MainMenuScreenType.NetPlaySetup);
+                    }
+                }
+            },
         ];
         if (this.storageEnabled) {
             buttons.push({
