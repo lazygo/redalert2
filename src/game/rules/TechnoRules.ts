@@ -81,6 +81,7 @@ export class TechnoRules extends ObjectRules {
     declare weaponsFactory: boolean;
     declare helipad: boolean;
     declare hospital: boolean;
+    declare armory: boolean;
     declare landTargeting: LandTargeting;
     declare navalTargeting: NavalTargeting;
     declare tooBigToFitUnderBridge: boolean;
@@ -347,6 +348,7 @@ export class TechnoRules extends ObjectRules {
         this.weaponsFactory = this.ini.getBool("WeaponsFactory");
         this.helipad = this.ini.getBool("Helipad");
         this.hospital = this.ini.getBool("Hospital");
+        this.armory = this.ini.getBool("Armory");
         this.landTargeting = this.ini.getEnumNumeric("LandTargeting", LandTargeting, LandTargeting.LandOk);
         this.navalTargeting = this.ini.getEnumNumeric("NavalTargeting", NavalTargeting, NavalTargeting.UnderwaterNever);
         this.tooBigToFitUnderBridge = this.ini.getBool("TooBigToFitUnderBridge", this.type === ObjectType.Building);

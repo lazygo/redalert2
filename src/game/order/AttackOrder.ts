@@ -140,6 +140,8 @@ export class AttackOrder extends Order {
             return true;
         if (targetObj?.isBuilding() && targetObj.hospitalTrait)
             return false;
+        if (targetObj?.isBuilding() && targetObj.armoryTrait)
+            return false;
         if (!targetObj || !targetObj.healthTrait)
             return false;
         if (targetObj.isDestroyed || targetObj.isCrashing)

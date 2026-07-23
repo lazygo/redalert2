@@ -23,6 +23,7 @@ import { SuperWeaponTrait } from "@/game/gameobject/trait/SuperWeaponTrait";
 import { GapGeneratorTrait } from "@/game/gameobject/trait/GapGeneratorTrait";
 import { PsychicDetectorTrait } from "@/game/gameobject/trait/PsychicDetectorTrait";
 import { HospitalTrait } from "@/game/gameobject/trait/HospitalTrait";
+import { ArmoryTrait } from "@/game/gameobject/trait/ArmoryTrait";
 import { Vector2 } from "@/game/math/Vector2";
 import { DelayedKillTrait } from "@/game/gameobject/trait/DelayedKillTrait";
 import { BuildStatusChangeEvent } from "@/game/event/BuildStatusChangeEvent";
@@ -52,6 +53,7 @@ export class Building extends Techno {
     public unitRepairTrait?: UnitRepairTrait;
     public unitReloadTrait?: UnitReloadTrait;
     public hospitalTrait?: HospitalTrait;
+    public armoryTrait?: ArmoryTrait;
     public rallyTrait?: RallyTrait;
     public wallTrait?: WallTrait;
     public gapGeneratorTrait?: GapGeneratorTrait;
@@ -117,6 +119,10 @@ export class Building extends Techno {
         if (rules.hospital) {
             building.hospitalTrait = new HospitalTrait();
             building.traits.add(building.hospitalTrait);
+        }
+        if (rules.armory) {
+            building.armoryTrait = new ArmoryTrait();
+            building.traits.add(building.armoryTrait);
         }
         if (rules.factory || rules.cloning || rules.numberOfDocks) {
             building.rallyTrait = new RallyTrait();

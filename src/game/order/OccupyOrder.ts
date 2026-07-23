@@ -9,6 +9,7 @@ import { LocomotorType } from "@/game/type/LocomotorType";
 import { EnterRecyclerTask } from "@/game/gameobject/task/EnterRecyclerTask";
 import { InfiltrateBuildingTask } from "@/game/gameobject/task/InfiltrateBuildingTask";
 import { EnterHospitalTask } from "@/game/gameobject/task/EnterHospitalTask";
+import { EnterArmoryTask } from "@/game/gameobject/task/EnterArmoryTask";
 export class OccupyOrder extends Order {
     private game: any;
     constructor(game: any) {
@@ -43,6 +44,12 @@ export class OccupyOrder extends Order {
             return this.game.areFriendly(this.sourceObject, this.target.obj) &&
                 this.sourceObject.isInfantry();
         }
+        if (this.target.obj.isBuilding() && this.target.obj.armoryTrait) {
+            return this.game.areFriendly(this.sourceObject, this.target.obj) &&
+                this.sourceObject.isInfantry() &&
+                !!this.sourceObject.veteranTrait &&
+                !this.sourceObject.veteranTrait.isMaxLevel();
+        }
         if (this.target.obj.garrisonTrait) {
             return this.target.obj.garrisonTrait.canBeOccupied() &&
                 this.sourceObject.rules.occupier &&
@@ -72,6 +79,12 @@ export class OccupyOrder extends Order {
             return unit.healthTrait.health < 100 &&
                 unit.rules.movementZone !== MovementZone.Fly;
         }
+        if (building.armoryTrait) {
+            return !!unit.veteranTrait &&
+                !unit.veteranTrait.isMaxLevel() &&
+                unit.rules.movementZone !== MovementZone.Fly &&
+                (!building.ammoTrait || building.ammoTrait.ammo > 0);
+        }
         if (building.garrisonTrait) {
             return building.garrisonTrait.units.length < building.rules.maxNumberOccupants;
         }
@@ -85,6 +98,9 @@ export class OccupyOrder extends Order {
         }
         if (building.hospitalTrait) {
             return [new EnterHospitalTask(this.game, building)];
+        }
+        if (building.armoryTrait) {
+            return [new EnterArmoryTask(this.game, building)];
         }
         if (building.garrisonTrait) {
             return [new GarrisonBuildingTask(this.game, building)];
