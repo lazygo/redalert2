@@ -7,6 +7,7 @@ import { ScreenType, MainMenuScreenType } from './gui/screen/ScreenType.js';
 import { MainMenuRootScreen } from './gui/screen/mainMenu/MainMenuRootScreen.js';
 import { HomeScreen } from './gui/screen/mainMenu/main/HomeScreen.js';
 import { LanSetupScreen } from './gui/screen/mainMenu/lan/LanSetupScreen.js';
+import { NetPlaySetupScreen } from './gui/screen/mainMenu/netplay/NetPlaySetupScreen.js';
 import { StorageScreen } from './gui/screen/options/StorageScreen.js';
 import { Config } from './Config.js';
 import { Strings } from './data/Strings.js';
@@ -305,6 +306,7 @@ export class Gui {
         const { TestEntryScreen } = await import('./gui/screen/mainMenu/main/TestEntryScreen.js');
         subScreens.set(MainMenuScreenType.TestEntry, TestEntryScreen);
         subScreens.set(MainMenuScreenType.LanSetup, LanSetupScreen);
+        subScreens.set(MainMenuScreenType.NetPlaySetup, NetPlaySetupScreen);
         const { InfoAndCreditsScreen } = await import('./gui/screen/mainMenu/infoAndCredits/InfoAndCreditsScreen.js');
         const { CreditsScreen } = await import('./gui/screen/mainMenu/credits/CreditsScreen.js');
         subScreens.set(MainMenuScreenType.InfoAndCredits, InfoAndCreditsScreen);

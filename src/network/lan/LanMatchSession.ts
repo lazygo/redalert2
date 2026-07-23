@@ -1,4 +1,4 @@
-import { LanMeshAppMessage, LanMeshSession, LanMeshSnapshot } from '@/network/lan/LanMeshSession';
+import { LanMeshAppMessage } from '@/network/lan/LanMeshSession';
 import { LanHumanAssignment, LanLaunchDescriptor } from '@/network/lan/LanRoomSession';
 import { EventDispatcher } from '@/util/event';
 import { base64StringToUint8Array, uint8ArrayToBase64String } from '@/util/string';
@@ -30,12 +30,12 @@ export interface LanMatchTransport {
     broadcastAppMessage(payload: unknown, excludedPeerId?: string): void;
     leaveRoom?(): void;
     onSnapshotChange: {
-        subscribe(listener: (snapshot: LanMatchTransportSnapshot, source: LanMeshSession) => void): void;
-        unsubscribe(listener: (snapshot: LanMatchTransportSnapshot, source: LanMeshSession) => void): void;
+        subscribe(listener: (snapshot: LanMatchTransportSnapshot, source: unknown) => void): void;
+        unsubscribe(listener: (snapshot: LanMatchTransportSnapshot, source: unknown) => void): void;
     };
     onAppMessage: {
-        subscribe(listener: (entry: LanMatchTransportMessage, source: LanMeshSession) => void): void;
-        unsubscribe(listener: (entry: LanMatchTransportMessage, source: LanMeshSession) => void): void;
+        subscribe(listener: (entry: LanMatchTransportMessage, source: unknown) => void): void;
+        unsubscribe(listener: (entry: LanMatchTransportMessage, source: unknown) => void): void;
     };
 }
 
@@ -158,7 +158,7 @@ export class LanMatchSession {
         this.handleAppMessage = this.handleAppMessage.bind(this);
         this.transport.onSnapshotChange.subscribe(this.handleSnapshotChange);
         this.transport.onAppMessage.subscribe(this.handleAppMessage);
-        this.handleSnapshotChange(this.lastSnapshot, this.transport as LanMeshSession);
+        this.handleSnapshotChange(this.lastSnapshot, this.transport);
     }
 
     dispose(): void {
@@ -303,7 +303,7 @@ export class LanMatchSession {
         };
     }
 
-    private handleSnapshotChange(snapshot: LanMatchTransportSnapshot, _source: LanMeshSession): void {
+    private handleSnapshotChange(snapshot: LanMatchTransportSnapshot, _source: unknown): void {
         this.lastSnapshot = snapshot;
         const connectedPeerIds = new Set(
             snapshot.members
@@ -321,7 +321,7 @@ export class LanMatchSession {
         this.dispatchSnapshot();
     }
 
-    private handleAppMessage(entry: LanMeshAppMessage, _source: LanMeshSession): void {
+    private handleAppMessage(entry: LanMeshAppMessage, _source: unknown): void {
         const payload = entry.payload;
         if (!payload || typeof payload !== 'object') {
             return;
