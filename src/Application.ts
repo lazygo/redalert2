@@ -207,6 +207,8 @@ export class Application {
             this.strings = new Strings();
             this.currentLocale = currentConfig.defaultLocale;
         }
+        // Mod CSF overlays game strings (e.g. China faction names) when ?mod=<id> is set.
+        await this.mergeModCsfOverrides();
         const jsonLocaleFile = `res/locale/${this.currentLocale}.json?v=${this.getVersion()}`;
         console.log(`[Application] Attempting to load JSON locale file: ${jsonLocaleFile}`);
         try {
@@ -232,6 +234,43 @@ export class Application {
         console.log('[Application] Sample string GUI:Cancel ->', this.strings.get('GUI:Cancel'));
         console.log('[Application] Sample string GUI:LoadingEx ->', this.strings.get('GUI:LoadingEx'));
         console.log('[Application] First 20 keys in Strings:', this.strings.getKeys().slice(0, 20));
+    }
+    /**
+     * Merge optional CSF from /mods/<id>/ when URL has ?mod=<id>.
+     * Tries common names: ra2.csf, general.csf, <id>.csf
+     */
+    private async mergeModCsfOverrides(): Promise<void> {
+        const modId = new URLSearchParams(window.location.search).get('mod')?.trim();
+        if (!modId || !/^[a-z0-9-_]+$/i.test(modId)) {
+            return;
+        }
+        const modsBase = (this.config?.modsBaseUrl || '/mods/').replace(/\/?$/, '/');
+        const candidates = [`${modId}/ra2.csf`, `${modId}/general.csf`, `${modId}/${modId}.csf`];
+        for (const relative of candidates) {
+            const url = `${modsBase}${relative}`;
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    continue;
+                }
+                const arrayBuffer = await response.arrayBuffer();
+                if (arrayBuffer.byteLength === 0) {
+                    continue;
+                }
+                const dataStream = new DataStream(arrayBuffer, 0, DataStream.LITTLE_ENDIAN);
+                dataStream.dynamicSize = false;
+                const csf = new CsfFile(new VirtualFile(dataStream, relative));
+                this.strings.fromCsf(csf);
+                console.log(
+                    `[Application] Merged mod CSF "${url}" (${Object.keys(csf.data).length} keys). Total keys: ${this.strings.getKeys().length}.`,
+                );
+                return;
+            }
+            catch (e) {
+                console.warn(`[Application] Failed to merge mod CSF "${url}":`, e);
+            }
+        }
+        console.info(`[Application] No mod CSF found under ${modsBase}${modId}/ (tried ra2.csf, general.csf, ${modId}.csf)`);
     }
     private checkGlobalLibs(): void {
         console.log('[MVP] Skipping Application.checkGlobalLibs().');

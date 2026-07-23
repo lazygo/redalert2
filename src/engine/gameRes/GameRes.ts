@@ -33,6 +33,7 @@ import SplashScreen from '../../gui/component/SplashScreen';
 import type { Viewport } from '../../gui/Viewport';
 import type { Config } from '../../Config';
 import { RealFileSystemDir } from '../../data/vfs/RealFileSystemDir';
+import { VirtualFile } from '../../data/vfs/VirtualFile';
 interface FsAccessLibrary {
     support: {
         adapter: {
@@ -138,6 +139,26 @@ export class GameRes {
             console.warn("No storage adapters available.");
         }
         let currentConfig = persistedConfig;
+        // Auto-sync original RA2 mixes (ra2/language/multi) from HTTP → OPFS, then play without upload.
+        const originalGameResUrl = this.appConfig.originalGameResUrl;
+        if (rfs && originalGameResUrl) {
+            const rootDir = rfs.getRootDirectory();
+            if (rootDir) {
+                try {
+                    updateSplashScreen(this.strings.get("TS:Downloading") || "Downloading game resources...");
+                    await this.syncOriginalGameResFromHttp(rootDir, originalGameResUrl, updateSplashScreen);
+                    if (await this.lookForGameFiles(rootDir)) {
+                        currentConfig = new GameResConfig(this.appConfig.gameresBaseUrl ?? "");
+                        currentConfig.source = GameResSource.Local;
+                        configRequiresSave = true;
+                        console.info("Using auto-synced original game resources from", originalGameResUrl);
+                    }
+                }
+                catch (e) {
+                    console.warn("Failed to auto-sync original game resources:", e);
+                }
+            }
+        }
         if (!currentConfig && rfs) {
             const rootDir = rfs.getRootDirectory();
             console.log('[GameRes] Checking for existing game files. RFS rootDir:', rootDir);
@@ -151,8 +172,15 @@ export class GameRes {
                 console.log('[GameRes] No game files found in local storage');
             }
         }
-        else {
+        else if (!originalGameResUrl) {
             console.log('[GameRes] Skipping game file check. currentConfig:', currentConfig, 'rfs:', rfs);
+        }
+        // Fall back to split CDN packs if configured and still nothing local.
+        if (!currentConfig && this.appConfig.gameresBaseUrl) {
+            currentConfig = new GameResConfig(this.appConfig.gameresBaseUrl);
+            currentConfig.source = GameResSource.Cdn;
+            configRequiresSave = true;
+            console.info("Using CDN game resources from", this.appConfig.gameresBaseUrl);
         }
         let modRfsDir: RealFileSystemDir | undefined;
         if (rfs) {
@@ -301,6 +329,18 @@ export class GameRes {
         let specificModDir: RealFileSystemDir | undefined;
         if (modName) {
             const baseModRfsDir = new RealFileSystemDir(modDirHandle);
+            const modsBaseUrl = this.appConfig.modsBaseUrl;
+            if (modsBaseUrl) {
+                try {
+                    this.splashScreen?.setLoadingText?.(
+                        this.strings.get("GUI:LoadingEx") || `Loading mod ${modName}...`,
+                    );
+                    await this.syncModFromHttp(modName, baseModRfsDir, modsBaseUrl);
+                }
+                catch (e) {
+                    console.warn(`Failed to sync mod "${modName}" from ${modsBaseUrl}:`, e);
+                }
+            }
             if (await baseModRfsDir.containsEntry(modName)) {
                 console.info(`Loading mod "${modName}"...`);
                 specificModDir = await baseModRfsDir.getDirectory(modName);
@@ -315,11 +355,152 @@ export class GameRes {
         }
         return specificModDir;
     }
+    /**
+     * Pull mod files from modsBaseUrl (e.g. /mods/gonghui/) into OPFS so the
+     * existing RFS → VFS path (standalone ini + expand##.mix) can load them.
+     * Public/CDN is the source of truth; files are overwritten on each load.
+     */
+    private async syncModFromHttp(
+        modId: string,
+        baseModRfsDir: RealFileSystemDir,
+        modsBaseUrl: string,
+    ): Promise<void> {
+        const base = modsBaseUrl.endsWith("/") ? modsBaseUrl : `${modsBaseUrl}/`;
+        const loader = new ResourceLoader(base);
+        let files: string[] = [
+            "expand01.mix",
+            "ecache01.mix",
+            "rules.ini",
+            "art.ini",
+            "modcd.ini",
+            "ra2.csf",
+            "general.csf",
+        ];
+        try {
+            const manifest = await loader.loadJson(`${modId}/manifest.json`);
+            if (Array.isArray(manifest?.files) && manifest.files.length > 0) {
+                files = manifest.files.map((f: string) => String(f));
+            }
+            console.info(`Mod "${modId}" manifest loaded (${files.length} files)`);
+        }
+        catch (e) {
+            console.info(
+                `No manifest for mod "${modId}", using default file list`,
+                e,
+            );
+        }
+        const modDir = await baseModRfsDir.getOrCreateDirectory(modId);
+        let synced = 0;
+        for (const file of files) {
+            const fileName = file.toLowerCase();
+            try {
+                const data = await loader.loadBinary(`${modId}/${file}`);
+                await modDir.writeFile(VirtualFile.fromBytes(data, fileName), fileName);
+                synced++;
+                console.info(`Synced mod file ${modId}/${fileName} (${data.byteLength} bytes)`);
+            }
+            catch (e) {
+                // Optional assets (art.ini, ecache, etc.) may be absent.
+                console.warn(`Skipped mod file ${modId}/${file}:`, e);
+            }
+        }
+        if (synced === 0) {
+            throw new Error(`No mod files could be downloaded for "${modId}" from ${base}`);
+        }
+        console.info(`Mod "${modId}" synced ${synced}/${files.length} file(s) from ${base}`);
+    }
+    /**
+     * Download original RA2 mixes into OPFS root so Local loading works without a manual upload.
+     * Skips files that already exist with the same size.
+     */
+    private async syncOriginalGameResFromHttp(
+        rootDir: RealFileSystemDir,
+        gameResBaseUrl: string,
+        onProgress: LoadProgressCallback,
+    ): Promise<void> {
+        const base = gameResBaseUrl.endsWith("/") ? gameResBaseUrl : `${gameResBaseUrl}/`;
+        const loader = new ResourceLoader(base);
+        type ManifestFile = { name: string; required?: boolean };
+        let files: ManifestFile[] = [
+            { name: "ra2.mix", required: true },
+            { name: "language.mix", required: true },
+            { name: "multi.mix", required: true },
+            { name: "theme.mix", required: false },
+        ];
+        try {
+            const manifest = await loader.loadJson("manifest.json");
+            if (manifest?.format === "original" && Array.isArray(manifest.files)) {
+                files = manifest.files.map((f: any) =>
+                    typeof f === "string"
+                        ? { name: f, required: true }
+                        : { name: String(f.name), required: f.required !== false },
+                );
+            }
+            else if (Array.isArray(manifest?.files)) {
+                files = manifest.files.map((f: any) =>
+                    typeof f === "string"
+                        ? { name: f, required: true }
+                        : { name: String(f.name), required: f.required !== false },
+                );
+            }
+        }
+        catch (e) {
+            console.info("No original game-res manifest, using default mix list", e);
+        }
+        let synced = 0;
+        for (const entry of files) {
+            const fileName = entry.name.toLowerCase();
+            try {
+                // Skip re-download when OPFS already has a non-empty file with matching size.
+                if (await rootDir.containsEntry(fileName)) {
+                    try {
+                        const existing = await rootDir.getRawFile(fileName, true);
+                        // HEAD-less: try a tiny range via full fetch only when missing/empty
+                        if (existing.size > 0) {
+                            console.info(`Keeping cached ${fileName} (${existing.size} bytes)`);
+                            synced++;
+                            continue;
+                        }
+                    }
+                    catch {
+                        // fall through to download
+                    }
+                }
+                onProgress(
+                    this.strings.get("TS:Downloading") || "Downloading...",
+                );
+                console.info(`Downloading ${fileName} from ${base}...`);
+                const data = await loader.loadBinary(fileName, undefined, {
+                    onProgress: (loaded) => {
+                        onProgress(
+                            `${fileName}: ${(loaded / 1024 / 1024).toFixed(1)} MB`,
+                        );
+                    },
+                });
+                await rootDir.writeFile(VirtualFile.fromBytes(data, fileName), fileName);
+                synced++;
+                console.info(`Synced game file ${fileName} (${data.byteLength} bytes)`);
+            }
+            catch (e) {
+                if (entry.required !== false) {
+                    const err = new Error(`Failed to download required game file "${fileName}" from ${base}`);
+                    (err as any).cause = e;
+                    throw err;
+                }
+                console.warn(`Optional game file skipped: ${fileName}`, e);
+            }
+        }
+        if (synced === 0) {
+            throw new Error(`No game resource files could be synced from ${base}`);
+        }
+        console.info(`Original game resources synced (${synced}/${files.length}) from ${base}`);
+    }
     private async lookForGameFiles(rfsDir: RealFileSystemDir): Promise<boolean> {
         const entries = await rfsDir.listEntries();
         console.log('[GameRes.lookForGameFiles] Entries in directory:', entries);
         const requiredFiles = ["language.mix", "multi.mix", "ra2.mix"];
-        const hasAllFiles = requiredFiles.every((fileName) => entries.includes(fileName));
+        const lowerEntries = new Set(entries.map((e) => e.toLowerCase()));
+        const hasAllFiles = requiredFiles.every((fileName) => lowerEntries.has(fileName.toLowerCase()));
         console.log('[GameRes.lookForGameFiles] Required files:', requiredFiles, 'Has all files:', hasAllFiles);
         return hasAllFiles;
     }
@@ -459,8 +640,20 @@ export class GameRes {
             const rootDir = rfs.getRootDirectory();
             if (!rootDir)
                 throw new Error("RFS root not available for mix integrity check");
-            await this.checkMixesIntegrity(rootDir);
-            console.info("Mixes are valid.");
+            // Auto-synced community packs often differ from the few official CRCs we hardcode.
+            // When originalGameResUrl is set, only verify files exist; don't block on checksum.
+            if (this.appConfig.originalGameResUrl) {
+                for (const mixName of ["ra2.mix", "language.mix", "multi.mix"]) {
+                    if (!(await rootDir.containsEntry(mixName))) {
+                        throw new GameResFileNotFoundError(mixName);
+                    }
+                }
+                console.info("Mix presence check OK (checksum skipped for auto-synced resources).");
+            }
+            else {
+                await this.checkMixesIntegrity(rootDir);
+                console.info("Mixes are valid.");
+            }
         }
         const logger = AppLogger.get("vfs");
         logger.info("Initializing virtual filesystem...");

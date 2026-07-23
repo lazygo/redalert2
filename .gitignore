@@ -61,6 +61,9 @@ docs/
 .rts2_cache_umd/
 
 public/cdn/
+# Large original RA2 mixes (served from public/game-res/, do not commit)
+public/game-res/*.mix
+public/mods/**/*.mix
 .artifacts/
 scripts/
 

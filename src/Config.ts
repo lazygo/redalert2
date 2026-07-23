@@ -83,6 +83,11 @@ export class Config {
         const url = this.generalData.getString("modsBaseUrl");
         return url === "" ? undefined : url;
     }
+    /** HTTP base for original RA2 mixes (ra2.mix / language.mix / multi.mix). Auto-synced to OPFS; no upload. */
+    get originalGameResUrl(): string | undefined {
+        const url = this.generalData.getString("originalGameResUrl");
+        return url === "" ? undefined : url;
+    }
     get devMode(): boolean {
         return this.generalData.getBool("dev");
     }
