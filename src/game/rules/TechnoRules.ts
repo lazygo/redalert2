@@ -2,6 +2,7 @@ import { ObjectType } from "@/engine/type/ObjectType";
 import { SideType } from "@/game/SideType";
 import { SpeedType } from "@/game/type/SpeedType";
 import { PipColor } from "@/game/type/PipColor";
+import { PipScale } from "@/game/type/PipScale";
 import { LocomotorType } from "@/game/type/LocomotorType";
 import { MovementZone } from "@/game/type/MovementZone";
 import { ArmorType } from "@/game/type/ArmorType";
@@ -199,6 +200,7 @@ export class TechnoRules extends ObjectRules {
     declare burstDelay: (number | undefined)[];
     declare vhpScan: VhpScan;
     declare pip: PipColor;
+    declare pipScale: PipScale;
     declare passengers: number;
     declare gunner: boolean;
     declare ammo: number;
@@ -503,6 +505,7 @@ export class TechnoRules extends ObjectRules {
         this.burstDelay = this.parseBurstDelay();
         this.vhpScan = this.ini.getEnum("VHPScan", VhpScan, VhpScan.None, true);
         this.pip = this.ini.getEnum("Pip", PipColor, PipColor.Green, true);
+        this.pipScale = this.ini.getEnum("PipScale", PipScale, PipScale.None, true);
         this.passengers = this.ini.getNumber("Passengers");
         this.gunner = this.ini.getBool("Gunner");
         this.ammo = this.ini.getNumber("Ammo", -1);
