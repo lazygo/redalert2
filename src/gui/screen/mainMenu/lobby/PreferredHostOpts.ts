@@ -2,7 +2,7 @@ import { GameOpts } from '@/game/gameopts/GameOpts';
 export class PreferredHostOpts {
     gameSpeed: number = 6;
     credits: number = 10000;
-    unitCount: number = 10;
+    unitCount: number = 8;
     shortGame: boolean = true;
     superWeapons: boolean = false;
     buildOffAlly: boolean = true;

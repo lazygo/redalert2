@@ -1,0 +1,12 @@
+{
+  "id": "gonghui",
+  "name": "共和国之辉",
+  "version": "Rev.2025.05.01.1",
+  "files": [
+    "expand01.mix",
+    "ecache01.mix",
+    "rules.ini",
+    "modcd.ini",
+    "ra2.csf"
+  ]
+}

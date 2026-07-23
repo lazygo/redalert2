@@ -79,10 +79,16 @@ export class MapSupport {
                 return translator.get("TS:MapUnsupportedOverlay", crateImg);
             }
         }
+        // Soft-check cross-references: many RA2 mods (e.g. 共和国之辉) leave
+        // broken UndeploysInto/DeploysInto/Spawns from copy-paste (YR SMIN etc.).
+        // The original client still loads maps; hard-failing here blocks all maps.
         for (const building of rules.buildingRules.values() as IterableIterator<BuildingRule>) {
             if (building.undeploysInto &&
                 !rules.hasObject(building.undeploysInto, ObjectType.Vehicle)) {
-                return translator.get("TS:MapUnsupportedTechno", building.undeploysInto);
+                console.warn(
+                    `[MapSupport] Building undeploys into missing vehicle "${building.undeploysInto}" — ignoring`,
+                );
+                // return translator.get("TS:MapUnsupportedTechno", building.undeploysInto);
             }
         }
         const allTechnoRules = [
@@ -92,11 +98,17 @@ export class MapSupport {
         ] as TechnoRule[];
         for (const techno of allTechnoRules) {
             if (techno.spawns && !rules.hasObject(techno.spawns, ObjectType.Aircraft)) {
-                return translator.get("TS:MapUnsupportedTechno", techno.spawns);
+                console.warn(
+                    `[MapSupport] Techno spawns missing aircraft "${techno.spawns}" — ignoring`,
+                );
+                // return translator.get("TS:MapUnsupportedTechno", techno.spawns);
             }
             if (techno.deploysInto &&
                 !rules.hasObject(techno.deploysInto, ObjectType.Building)) {
-                return translator.get("TS:MapUnsupportedTechno", techno.deploysInto);
+                console.warn(
+                    `[MapSupport] Techno deploys into missing building "${techno.deploysInto}" — ignoring`,
+                );
+                // return translator.get("TS:MapUnsupportedTechno", techno.deploysInto);
             }
         }
         return undefined;

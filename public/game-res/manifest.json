@@ -1,0 +1,9 @@
+{
+  "format": "original",
+  "files": [
+    { "name": "ra2.mix", "required": true },
+    { "name": "language.mix", "required": true },
+    { "name": "multi.mix", "required": true },
+    { "name": "theme.mix", "required": false }
+  ]
+}
