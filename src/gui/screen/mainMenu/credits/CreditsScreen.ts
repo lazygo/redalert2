@@ -92,11 +92,7 @@ export class CreditsScreen implements Screen {
         this.onEnter();
     }
     private getFallbackCreditsContent(): string {
-        return `网页红井制作组\t\n\n` +
-            `原项目开发\tChronodivide\n` +
-            `React迁移\t网页红井制作组\n` +
-            `技术支持\t思牛逼公众号\n\n` +
-            `{TS:Disclaimer}\n\n` +
+        return `{TS:Disclaimer}\n\n` +
             `{TXT_Copyright}`;
     }
     private createFallbackElement(content: string): HTMLElement {
