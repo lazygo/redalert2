@@ -1,7 +1,7 @@
 import { clamp } from "@/util/math";
 export class AmmoTrait {
     private _ammo: number;
-    private maxAmmo: number;
+    readonly maxAmmo: number;
     constructor(maxAmmo: number, ammo: number = maxAmmo) {
         this.maxAmmo = maxAmmo;
         this.ammo = ammo;

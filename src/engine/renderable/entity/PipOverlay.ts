@@ -5,6 +5,7 @@ import { Coords } from '../../../game/Coords';
 import { TextureUtils } from '../../gfx/TextureUtils';
 import { SelectionLevel } from '../../../game/gameobject/selection/SelectionLevel';
 import { PipColor } from '../../../game/type/PipColor';
+import { PipScale } from '../../../game/type/PipScale';
 import { CompositeDisposable } from '../../../util/disposable/CompositeDisposable';
 import { OverlayUtils } from '../../gfx/OverlayUtils';
 import { RallyPointFx } from '../fx/RallyPointFx';
@@ -99,6 +100,8 @@ interface GameObject {
         maxNumberOccupants?: number;
         size: number;
         pip: PipColor;
+        pipScale?: PipScale;
+        ammo?: number;
     };
     healthTrait: {
         health: number;
@@ -109,6 +112,12 @@ interface GameObject {
             length: number;
         };
     };
+    ammoTrait?: {
+        ammo: number;
+        maxAmmo: number;
+    };
+    armoryTrait?: unknown;
+    hospitalTrait?: unknown;
     rallyTrait?: {
         getRallyPoint(): {
             rx: number;
@@ -280,7 +289,7 @@ export class PipOverlay {
                     rootObj.add(occupationInfo);
                     this.pipsSprite = occupationInfo;
                 }
-                this.lastPipsDataKey = this.gameObject.garrisonTrait?.units.length;
+                this.lastPipsDataKey = this.computePipsDataKey(this.gameObject);
             }
             else {
                 const { healthBarWrapper, selectionBox } = this.createUnitHealthBar(this.gameObject);
@@ -576,6 +585,37 @@ export class PipOverlay {
             mesh.renderOrder = 999999;
             return mesh;
         }
+        return this.createBuildingAmmoInfo(gameObject);
+    }
+    private createBuildingAmmoInfo(gameObject: GameObject): THREE.Mesh | undefined {
+        const maxAmmo = gameObject.ammoTrait?.maxAmmo ?? gameObject.rules.ammo ?? 0;
+        const showAmmo = maxAmmo > 0 &&
+            !this.objectIsOpaqueToViewer() &&
+            (gameObject.rules.pipScale === PipScale.Ammo ||
+                !!gameObject.armoryTrait ||
+                !!gameObject.hospitalTrait);
+        if (!showAmmo) {
+            return undefined;
+        }
+        const currentAmmo = gameObject.ammo ?? gameObject.ammoTrait?.ammo ?? 0;
+        const geometries: THREE.BufferGeometry[] = [];
+        const spacing = 4 * Coords.ISO_WORLD_SCALE;
+        const emptySlotImage = PipOverlay.pipsFile.getImage(6);
+        const filledSlotImage = PipOverlay.pipsFile.getImage(7);
+        for (let i = 1; i <= maxAmmo; i++) {
+            const image = i <= currentAmmo ? filledSlotImage : emptySlotImage;
+            const geometry = PipOverlay.geometries.get(image)!.clone();
+            const xOffset = spacing * i + spacing / 2;
+            geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(xOffset, 0, gameObject.art.foundation.height * Coords.getWorldTileSize()));
+            geometries.push(geometry);
+        }
+        const mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(geometries);
+        const mesh = this.useSpriteBatching
+            ? new BatchedMesh(mergedGeometry, PipOverlay.material!, BatchMode.Merging)
+            : new THREE.Mesh(mergedGeometry, PipOverlay.material!);
+        mesh.matrixAutoUpdate = false;
+        mesh.renderOrder = 999999;
+        return mesh;
     }
     private createPipsSprite(pipColors: PipColor[], totalSlots: number, isAircraft = false): THREE.Mesh | undefined {
         if (!this.objectIsOpaqueToViewer()) {
@@ -1052,7 +1092,16 @@ export class PipOverlay {
     }
     private computePipsDataKey(gameObject: GameObject): any {
         if (gameObject.isBuilding()) {
-            return gameObject.garrisonTrait?.units.length;
+            if (gameObject.garrisonTrait) {
+                return gameObject.garrisonTrait.units.length;
+            }
+            if (gameObject.ammoTrait &&
+                (gameObject.rules.pipScale === PipScale.Ammo ||
+                    gameObject.armoryTrait ||
+                    gameObject.hospitalTrait)) {
+                return gameObject.ammo ?? gameObject.ammoTrait.ammo;
+            }
+            return undefined;
         }
         else if (gameObject.isVehicle()) {
             if (gameObject.harvesterTrait) {
