@@ -10,6 +10,12 @@
     "ts:downloadingpgsize": "Downloading %.1f MiB / %.1f MiB... (%d%%)",
     "ts:downloadingpgunkn": "Downloading %.1f MiB...",
     "ts:downloadfailed": "A remote resource could not be downloaded.",
+    "ts:gameres_sync_start": "Downloading %s (%d/%d)...",
+    "ts:gameres_sync_pg": "%s (%d/%d): %.1f / %.1f MiB (%d%%)",
+    "ts:gameres_sync_pgunkn": "%s (%d/%d): %.1f MiB",
+    "ts:gameres_sync_write": "Writing to local storage: %s...",
+    "ts:gameres_sync_done": "Finished %s (%d/%d)",
+    "ts:gameres_sync_cached": "Cached %s (%d/%d)",
 
     "ts:gameres_locate_title": "Locate original game assets",
     "ts:gameres_import_desc": "If you have a copy of RA2 already installed, you can import it below. You can also choose to import an archive containing *.mix files from the local filesystem or a web URL.",

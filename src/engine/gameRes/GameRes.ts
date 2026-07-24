@@ -52,7 +52,7 @@ interface InitResult {
     configToPersist?: GameResConfig;
     cdnResLoader?: CdnResourceLoader;
 }
-type LoadProgressCallback = (loadingText?: string, backgroundImage?: string | Blob) => void;
+type LoadProgressCallback = (loadingText?: string, backgroundImage?: string | Blob, progressPercent?: number) => void;
 type FatalErrorCallback = (error: Error, strings: Strings) => Promise<void>;
 type ImportErrorCallback = (error: Error, strings: Strings) => Promise<void>;
 export class GameRes {
@@ -85,9 +85,9 @@ export class GameRes {
         let configRequiresSave = false;
         let createdBlobUrl: string | undefined;
         let cdnResourceLoader: CdnResourceLoader | undefined = undefined;
-        const updateSplashScreen: LoadProgressCallback = (text, image) => {
+        const updateSplashScreen: LoadProgressCallback = (text, image, progressPercent) => {
             if (text)
-                this.splashScreen.setLoadingText(text);
+                this.splashScreen.setLoadingText(text, progressPercent);
             if (image) {
                 let imageUrl: string;
                 if (typeof image === 'string') {
@@ -136,7 +136,16 @@ export class GameRes {
         catch (e) {
             if (!(e instanceof NoStorageError))
                 throw e;
-            console.warn("No storage adapters available.");
+            const insecureHttp = typeof location !== 'undefined'
+                && location.protocol === 'http:'
+                && location.hostname !== 'localhost'
+                && location.hostname !== '127.0.0.1';
+            console.warn(
+                "No storage adapters available.",
+                insecureHttp
+                    ? "This page is on plain HTTP (not localhost). Prefer HTTPS so OPFS works; IndexedDB polyfill should still be tried."
+                    : "",
+            );
         }
         let currentConfig = persistedConfig;
         // Auto-sync original RA2 mixes (ra2/language/multi) from HTTP → OPFS, then play without upload.
@@ -448,8 +457,11 @@ export class GameRes {
             console.info("No original game-res manifest, using default mix list", e);
         }
         let synced = 0;
+        const downloadable = files.filter((f) => f.name);
+        let fileIndex = 0;
         for (const entry of files) {
             const fileName = entry.name.toLowerCase();
+            fileIndex++;
             try {
                 // Skip re-download when OPFS already has a non-empty file with matching size.
                 if (await rootDir.containsEntry(fileName)) {
@@ -459,6 +471,12 @@ export class GameRes {
                         if (existing.size > 0) {
                             console.info(`Keeping cached ${fileName} (${existing.size} bytes)`);
                             synced++;
+                            onProgress(
+                                this.strings.get("ts:gameres_sync_cached", fileName, fileIndex, downloadable.length)
+                                    || `已缓存 ${fileName}（${fileIndex}/${downloadable.length}）`,
+                                undefined,
+                                Math.floor((fileIndex / downloadable.length) * 100),
+                            );
                             continue;
                         }
                     }
@@ -466,20 +484,70 @@ export class GameRes {
                         // fall through to download
                     }
                 }
+                const overallBase = ((fileIndex - 1) / downloadable.length) * 100;
+                const overallSpan = 100 / downloadable.length;
                 onProgress(
-                    this.strings.get("TS:Downloading") || "Downloading...",
+                    this.strings.get("ts:gameres_sync_start", fileName, fileIndex, downloadable.length)
+                        || `正在下载 ${fileName}（${fileIndex}/${downloadable.length}）...`,
+                    undefined,
+                    Math.floor(overallBase),
                 );
                 console.info(`Downloading ${fileName} from ${base}...`);
+                let loadedBytes = 0;
+                let lastUiAt = 0;
+                let lastPercentShown = -1;
                 const data = await loader.loadBinary(fileName, undefined, {
-                    onProgress: (loaded) => {
-                        onProgress(
-                            `${fileName}: ${(loaded / 1024 / 1024).toFixed(1)} MB`,
-                        );
+                    onProgress: (delta, total) => {
+                        loadedBytes += delta;
+                        const now = performance.now();
+                        const filePercent = total && total > 0
+                            ? Math.min(100, Math.floor((loadedBytes / total) * 100))
+                            : -1;
+                        // Throttle UI updates (~4fps or every 1% of current file).
+                        if (now - lastUiAt < 250 && filePercent === lastPercentShown) {
+                            return;
+                        }
+                        lastUiAt = now;
+                        lastPercentShown = filePercent;
+                        const overall = total && total > 0
+                            ? Math.min(99, Math.floor(overallBase + (loadedBytes / total) * overallSpan * 0.9))
+                            : Math.floor(overallBase);
+                        const loadedMiB = loadedBytes / 1024 / 1024;
+                        const text = total && total > 0
+                            ? (this.strings.get(
+                                "ts:gameres_sync_pg",
+                                fileName,
+                                fileIndex,
+                                downloadable.length,
+                                loadedMiB,
+                                total / 1024 / 1024,
+                                filePercent,
+                            ) || `${fileName}（${fileIndex}/${downloadable.length}）：${loadedMiB.toFixed(1)} / ${(total / 1024 / 1024).toFixed(1)} MiB（${filePercent}%）`)
+                            : (this.strings.get(
+                                "ts:gameres_sync_pgunkn",
+                                fileName,
+                                fileIndex,
+                                downloadable.length,
+                                loadedMiB,
+                            ) || `${fileName}（${fileIndex}/${downloadable.length}）：${loadedMiB.toFixed(1)} MiB`);
+                        onProgress(text, undefined, overall);
                     },
                 });
+                onProgress(
+                    this.strings.get("ts:gameres_sync_write", fileName)
+                        || `正在写入本地存储：${fileName}...`,
+                    undefined,
+                    Math.floor(overallBase + overallSpan * 0.95),
+                );
                 await rootDir.writeFile(VirtualFile.fromBytes(data, fileName), fileName);
                 synced++;
                 console.info(`Synced game file ${fileName} (${data.byteLength} bytes)`);
+                onProgress(
+                    this.strings.get("ts:gameres_sync_done", fileName, fileIndex, downloadable.length)
+                        || `已完成 ${fileName}（${fileIndex}/${downloadable.length}）`,
+                    undefined,
+                    Math.floor((fileIndex / downloadable.length) * 100),
+                );
             }
             catch (e) {
                 if (entry.required !== false) {
@@ -842,10 +910,12 @@ export class GameRes {
             adaptersToTry.push({ name: "native", module: undefined });
         }
         if (preference === "fallback" || adaptersToTry.length === 0) {
-            if (this.fsAccessLib.support.adapter.indexeddb) {
+            // Prefer explicit support flags, but still try bundled adapters when present.
+            // (Upstream `support.adapter` omits `indexeddb`, which breaks HTTP/non-secure origins.)
+            if (this.fsAccessLib.support.adapter.indexeddb || this.fsAccessLib.adapters.indexeddb) {
                 adaptersToTry.push({ name: "indexeddb", module: this.fsAccessLib.adapters.indexeddb });
             }
-            if (this.fsAccessLib.support.adapter.cache) {
+            if (this.fsAccessLib.support.adapter.cache || this.fsAccessLib.adapters.cache) {
                 adaptersToTry.push({ name: "cache", module: this.fsAccessLib.adapters.cache });
             }
         }

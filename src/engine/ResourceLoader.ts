@@ -2,7 +2,8 @@ import { OperationCanceledError, type CancellationToken } from '@puzzl/core/lib/
 import { HttpRequest, DownloadError } from '../network/HttpRequest';
 import { resourceConfigs, ResourceType, type ResourceConfig, type ResourceId } from './resourceConfigs';
 interface FetchResourceOptions {
-    onProgress?: (loadedBytes: number) => void;
+    /** Receives chunk size and optional Content-Length total (same as HttpRequest). */
+    onProgress?: (loadedDelta: number, totalLength?: number) => void;
 }
 interface LoadResourceItem {
     id?: ResourceId;
@@ -145,12 +146,10 @@ export class ResourceLoader {
             if ((cancellationToken as any)?.isCancellationRequested) {
                 throw new OperationCanceledError(cancellationToken);
             }
-            const itemProgress = { loadedBytes: 0 };
             const response = await this.fetchResource(item.src, cancellationToken, {
                 onProgress: (loadedBytesDelta) => {
                     if (onTotalProgress && totalSizeHint > 0) {
-                        totalLoadedBytes += (loadedBytesDelta - itemProgress.loadedBytes);
-                        itemProgress.loadedBytes = loadedBytesDelta;
+                        totalLoadedBytes += loadedBytesDelta;
                         onTotalProgress(Math.floor(100 * Math.min(1, totalLoadedBytes / totalSizeHint)));
                     }
                 },

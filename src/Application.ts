@@ -1006,15 +1006,16 @@ export class Application {
     }
     private createSplashScreenInterface() {
         return {
-            setLoadingText: (text: string) => {
-                console.log(`[Application] Splash Loading: "${text}"`);
+            setLoadingText: (text: string, progressPercent?: number) => {
                 if (this.splashScreenUpdateCallback) {
                     this.splashScreenUpdateCallback({
                         width: this.viewport.value.width,
                         height: this.viewport.value.height,
                         parentElement: this.rootEl,
-                        loadingText: text
-                    });
+                        loadingText: text,
+                        // Explicit undefined clears a previous download bar when switching to plain status text.
+                        progress: progressPercent,
+                    } as ComponentProps<typeof SplashScreenComponent>);
                 }
             },
             setBackgroundImage: (url: string) => {
