@@ -122,8 +122,11 @@ export class Config {
     }
     /** WebSocket URL for remote netplay relay (empty = feature disabled). */
     get netplayWsUrl(): string | undefined {
-        const url = this.generalData.getString("netplayWsUrl");
-        return url === "" ? undefined : url;
+        const raw = this.generalData.getString("netplayWsUrl");
+        if (raw === "") {
+            return undefined;
+        }
+        return resolveNetplayWsUrl(raw);
     }
     get oldClientsBaseUrl(): string | undefined {
         const url = this.generalData.getString("oldClientsBaseUrl");
@@ -162,4 +165,27 @@ export class Config {
         }
         return wildcardProxy;
     }
+}
+
+/**
+ * Resolve netplay WS URL for the current page protocol.
+ * HTTPS pages must use wss:// (browsers block ws:// mixed content).
+ */
+export function resolveNetplayWsUrl(raw: string): string {
+    const pageIsHttps = typeof location !== "undefined" && location.protocol === "https:";
+    const wsScheme = pageIsHttps ? "wss:" : "ws:";
+
+    // Same-origin path: /ws
+    if (raw.startsWith("/")) {
+        return `${wsScheme}//${location.host}${raw}`;
+    }
+    // Protocol-relative: //host/ws
+    if (raw.startsWith("//")) {
+        return `${wsScheme}${raw}`;
+    }
+    // Absolute ws:// on an HTTPS page → upgrade to wss://
+    if (pageIsHttps && raw.startsWith("ws://")) {
+        return `wss://${raw.slice("ws://".length)}`;
+    }
+    return raw;
 }
