@@ -100,11 +100,13 @@ go run . -addr :8080 -static dist
 
 3. 浏览器打开 `http://127.0.0.1:8080`，主菜单进入「网络对战」。
 
-`public/config.ini`（构建进 `dist`）中的中继地址需与页面同源端口一致：
+`public/config.ini`（构建进 `dist`）建议用同源相对路径，页面是 `https` 时会自动连 `wss`：
 
 ```ini
-netplayWsUrl=ws://127.0.0.1:8080/ws
+netplayWsUrl=/ws
 ```
+
+本地纯 HTTP 调试也可用绝对地址，例如 `netplayWsUrl=ws://127.0.0.1:8080/ws`。若站点已上 HTTPS，勿再写 `ws://`（浏览器会拦截混合内容）。
 
 局域网联机（WebRTC 二维码）入口仍然保留，互不影响。
 
