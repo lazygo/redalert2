@@ -48,6 +48,7 @@ import { MapDigest } from '@/engine/MapDigest';
 import { MapSupport } from '@/engine/MapSupport';
 import { OBS_COUNTRY_ID } from '@/game/gameopts/constants';
 import { MainMenuRoute } from '@/gui/screen/mainMenu/MainMenuRoute';
+import { NavigationGuard } from '@/util/NavigationGuard';
 import { RootRoute } from '@/gui/screen/RootRoute';
 import { ChatHistory } from '@/gui/chat/ChatHistory';
 import { PingMonitor } from '@/gui/screen/game/PingMonitor';
@@ -91,6 +92,7 @@ export class GameScreen extends RootScreen {
     private debugMapFile?: any;
     private pausedAtSpeed?: number;
     private gameEndHandled = false;
+    private readonly navigationGuard = new NavigationGuard();
     constructor(private workerHostApi: any, private gservCon: any, private wgameresService: any, private wolService: any, private mapTransferService: any, private engineVersion: string, private engineModHash: string, private errorHandler: any, private gameMenuSubScreens: any, private loadingScreenApiFactory: any, private gameOptsParser: any, private gameOptsSerializer: any, private config: any, private strings: any, private renderer: any, private uiScene: any, private runtimeVars: any, private messageBoxApi: any, private toastApi: any, private uiAnimationLoop: any, private viewport: any, private jsxRenderer: any, private pointer: any, private sound: any, private music: any, private mixer: any, private keyBinds: any, private generalOptions: any, private localPrefs: any, private actionLogger: any, private lockstepLogger: any, private replayManager: any, private fullScreen: any, private mapFileLoader: any, private mapDir: any, private mapList: any, private gameLoader: any, private vxlGeometryPool: any, private buildingImageDataCache: any, private mutedPlayers: any, private tauntsEnabled: any, private speedCheat: any, private sentry: any, private battleControlApi: any) {
         super();
         this.onGservClose = (error: any) => {
@@ -162,6 +164,14 @@ export class GameScreen extends RootScreen {
             }
             const { returnTo, ...connectionParams } = params;
             this.localPrefs.setItem(StorageKey.LastConnection, JSON.stringify(connectionParams));
+        }
+        // Online / LAN / netplay cannot resume after refresh — warn on close/back.
+        if (!isSinglePlayer) {
+            this.navigationGuard.enable(
+                this.strings.get('ts:match_leave_warn')
+                    || '对战进行中。刷新、关闭或返回会断开连接并影响队友，确定要离开吗？',
+            );
+            this.disposables.add(() => this.navigationGuard.disable());
         }
         if (this.config.devMode) {
             this.runtimeVars.cheatsEnabled.value = this.isSinglePlayer;
@@ -347,6 +357,7 @@ export class GameScreen extends RootScreen {
     }
 
     async onLeave(): Promise<void> {
+        this.navigationGuard.disable();
         this.pointer.unlock();
         const hadGameAnimationLoop = Boolean(this.gameAnimationLoop);
         if (this.gameAnimationLoop) {

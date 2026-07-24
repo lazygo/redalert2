@@ -17,6 +17,7 @@
     "ts:gameres_sync_cached": "已缓存 %s（%d/%d）",
     "ts:gameres_bar_file": "当前文件 %s（%d/%d）",
     "ts:gameres_bar_total": "全部文件",
+    "ts:match_leave_warn": "对战进行中。刷新、关闭或返回会断开连接并影响队友，确定要离开吗？",
     "ts:gameres_locate_title": "❗❗--获取游玩指南--❗❗",
     "ts:gameres_import_desc": "如果你需要游玩MOD，那么你必须要导入红警2的完全体副本。否则请点击右上角 X",
     "ts:gameres_drop_desc": "将所需的游戏文件拖放到此处",
