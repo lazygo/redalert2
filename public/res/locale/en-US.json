@@ -16,6 +16,8 @@
     "ts:gameres_sync_write": "Writing to local storage: %s...",
     "ts:gameres_sync_done": "Finished %s (%d/%d)",
     "ts:gameres_sync_cached": "Cached %s (%d/%d)",
+    "ts:gameres_bar_file": "Current file %s (%d/%d)",
+    "ts:gameres_bar_total": "All files",
 
     "ts:gameres_locate_title": "Locate original game assets",
     "ts:gameres_import_desc": "If you have a copy of RA2 already installed, you can import it below. You can also choose to import an archive containing *.mix files from the local filesystem or a web URL.",
