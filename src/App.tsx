@@ -14,7 +14,6 @@ function App() {
         appInitialized.current = true;
         console.log('App.tsx: useEffect - Initializing Application');
         const handleSplashScreenUpdate: SplashScreenUpdateCallback = (props) => {
-            console.log('App.tsx: SplashScreen update callback received', props);
             if (props === null) {
                 setSplashScreenProps(null);
             }
