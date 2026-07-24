@@ -18,6 +18,7 @@
     "ts:gameres_sync_cached": "Cached %s (%d/%d)",
     "ts:gameres_bar_file": "Current file %s (%d/%d)",
     "ts:gameres_bar_total": "All files",
+    "ts:match_leave_warn": "A multiplayer match is in progress. Refreshing, closing, or going back will disconnect you and affect your teammates. Leave anyway?",
 
     "ts:gameres_locate_title": "Locate original game assets",
     "ts:gameres_import_desc": "If you have a copy of RA2 already installed, you can import it below. You can also choose to import an archive containing *.mix files from the local filesystem or a web URL.",
