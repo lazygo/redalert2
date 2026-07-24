@@ -52,7 +52,19 @@ interface InitResult {
     configToPersist?: GameResConfig;
     cdnResLoader?: CdnResourceLoader;
 }
-type LoadProgressCallback = (loadingText?: string, backgroundImage?: string | Blob, progressPercent?: number) => void;
+type SplashProgress = {
+    /** Overall 0–100 across all files. */
+    total?: number;
+    /** Current file 0–100. */
+    file?: number;
+    fileLabel?: string;
+    totalLabel?: string;
+};
+type LoadProgressCallback = (
+    loadingText?: string,
+    backgroundImage?: string | Blob,
+    progress?: SplashProgress,
+) => void;
 type FatalErrorCallback = (error: Error, strings: Strings) => Promise<void>;
 type ImportErrorCallback = (error: Error, strings: Strings) => Promise<void>;
 export class GameRes {
@@ -85,9 +97,9 @@ export class GameRes {
         let configRequiresSave = false;
         let createdBlobUrl: string | undefined;
         let cdnResourceLoader: CdnResourceLoader | undefined = undefined;
-        const updateSplashScreen: LoadProgressCallback = (text, image, progressPercent) => {
+        const updateSplashScreen: LoadProgressCallback = (text, image, progress) => {
             if (text)
-                this.splashScreen.setLoadingText(text, progressPercent);
+                this.splashScreen.setLoadingText(text, progress);
             if (image) {
                 let imageUrl: string;
                 if (typeof image === 'string') {
@@ -458,10 +470,29 @@ export class GameRes {
         }
         let synced = 0;
         const downloadable = files.filter((f) => f.name);
+        const totalFiles = Math.max(1, downloadable.length);
+        const str = (key: string, fallback: string, ...args: any[]) => {
+            if (!this.strings.has(key)) {
+                return fallback;
+            }
+            const value = this.strings.get(key, ...args);
+            if (!value || value.toLowerCase() === key.toLowerCase()) {
+                return fallback;
+            }
+            return value;
+        };
         let fileIndex = 0;
         for (const entry of files) {
             const fileName = entry.name.toLowerCase();
             fileIndex++;
+            const fileLabel = str(
+                'ts:gameres_bar_file',
+                `当前文件 ${fileName}（${fileIndex}/${totalFiles}）`,
+                fileName,
+                fileIndex,
+                totalFiles,
+            );
+            const totalLabel = str('ts:gameres_bar_total', '全部文件');
             try {
                 // Skip re-download when OPFS already has a non-empty file with matching size.
                 if (await rootDir.containsEntry(fileName)) {
@@ -472,10 +503,20 @@ export class GameRes {
                             console.info(`Keeping cached ${fileName} (${existing.size} bytes)`);
                             synced++;
                             onProgress(
-                                this.strings.get("ts:gameres_sync_cached", fileName, fileIndex, downloadable.length)
-                                    || `已缓存 ${fileName}（${fileIndex}/${downloadable.length}）`,
+                                str(
+                                    'ts:gameres_sync_cached',
+                                    `已缓存 ${fileName}（${fileIndex}/${totalFiles}）`,
+                                    fileName,
+                                    fileIndex,
+                                    totalFiles,
+                                ),
                                 undefined,
-                                Math.floor((fileIndex / downloadable.length) * 100),
+                                {
+                                    file: 100,
+                                    total: Math.floor((fileIndex / totalFiles) * 100),
+                                    fileLabel,
+                                    totalLabel,
+                                },
                             );
                             continue;
                         }
@@ -484,69 +525,99 @@ export class GameRes {
                         // fall through to download
                     }
                 }
-                const overallBase = ((fileIndex - 1) / downloadable.length) * 100;
-                const overallSpan = 100 / downloadable.length;
+                const overallBase = ((fileIndex - 1) / totalFiles) * 100;
+                const overallSpan = 100 / totalFiles;
                 onProgress(
-                    this.strings.get("ts:gameres_sync_start", fileName, fileIndex, downloadable.length)
-                        || `正在下载 ${fileName}（${fileIndex}/${downloadable.length}）...`,
+                    str(
+                        'ts:gameres_sync_start',
+                        `正在下载 ${fileName}（${fileIndex}/${totalFiles}）...`,
+                        fileName,
+                        fileIndex,
+                        totalFiles,
+                    ),
                     undefined,
-                    Math.floor(overallBase),
+                    {
+                        file: 0,
+                        total: Math.floor(overallBase),
+                        fileLabel,
+                        totalLabel,
+                    },
                 );
                 console.info(`Downloading ${fileName} from ${base}...`);
                 let loadedBytes = 0;
                 let lastUiAt = 0;
-                let lastPercentShown = -1;
+                let lastFilePercentShown = -1;
                 const data = await loader.loadBinary(fileName, undefined, {
                     onProgress: (delta, total) => {
                         loadedBytes += delta;
                         const now = performance.now();
                         const filePercent = total && total > 0
                             ? Math.min(100, Math.floor((loadedBytes / total) * 100))
-                            : -1;
-                        // Throttle UI updates (~4fps or every 1% of current file).
-                        if (now - lastUiAt < 250 && filePercent === lastPercentShown) {
+                            : Math.min(99, Math.floor(loadedBytes / (1024 * 1024))); // unknown size: show MiB as rough %
+                        if (now - lastUiAt < 100 && filePercent === lastFilePercentShown) {
                             return;
                         }
                         lastUiAt = now;
-                        lastPercentShown = filePercent;
+                        lastFilePercentShown = filePercent;
                         const overall = total && total > 0
-                            ? Math.min(99, Math.floor(overallBase + (loadedBytes / total) * overallSpan * 0.9))
+                            ? Math.min(99, Math.floor(overallBase + (loadedBytes / total) * overallSpan * 0.92))
                             : Math.floor(overallBase);
                         const loadedMiB = loadedBytes / 1024 / 1024;
                         const text = total && total > 0
-                            ? (this.strings.get(
-                                "ts:gameres_sync_pg",
+                            ? str(
+                                'ts:gameres_sync_pg',
+                                `${fileName}（${fileIndex}/${totalFiles}）：${loadedMiB.toFixed(1)} / ${(total / 1024 / 1024).toFixed(1)} MiB（${filePercent}%）`,
                                 fileName,
                                 fileIndex,
-                                downloadable.length,
+                                totalFiles,
                                 loadedMiB,
                                 total / 1024 / 1024,
                                 filePercent,
-                            ) || `${fileName}（${fileIndex}/${downloadable.length}）：${loadedMiB.toFixed(1)} / ${(total / 1024 / 1024).toFixed(1)} MiB（${filePercent}%）`)
-                            : (this.strings.get(
-                                "ts:gameres_sync_pgunkn",
+                            )
+                            : str(
+                                'ts:gameres_sync_pgunkn',
+                                `${fileName}（${fileIndex}/${totalFiles}）：${loadedMiB.toFixed(1)} MiB`,
                                 fileName,
                                 fileIndex,
-                                downloadable.length,
+                                totalFiles,
                                 loadedMiB,
-                            ) || `${fileName}（${fileIndex}/${downloadable.length}）：${loadedMiB.toFixed(1)} MiB`);
-                        onProgress(text, undefined, overall);
+                            );
+                        onProgress(text, undefined, {
+                            file: Math.max(0, Math.min(100, filePercent)),
+                            total: overall,
+                            fileLabel,
+                            totalLabel,
+                        });
                     },
                 });
                 onProgress(
-                    this.strings.get("ts:gameres_sync_write", fileName)
-                        || `正在写入本地存储：${fileName}...`,
+                    str('ts:gameres_sync_write', `正在写入本地存储：${fileName}...`, fileName),
                     undefined,
-                    Math.floor(overallBase + overallSpan * 0.95),
+                    {
+                        file: 100,
+                        total: Math.floor(overallBase + overallSpan * 0.95),
+                        fileLabel,
+                        totalLabel,
+                    },
                 );
                 await rootDir.writeFile(VirtualFile.fromBytes(data, fileName), fileName);
                 synced++;
                 console.info(`Synced game file ${fileName} (${data.byteLength} bytes)`);
                 onProgress(
-                    this.strings.get("ts:gameres_sync_done", fileName, fileIndex, downloadable.length)
-                        || `已完成 ${fileName}（${fileIndex}/${downloadable.length}）`,
+                    str(
+                        'ts:gameres_sync_done',
+                        `已完成 ${fileName}（${fileIndex}/${totalFiles}）`,
+                        fileName,
+                        fileIndex,
+                        totalFiles,
+                    ),
                     undefined,
-                    Math.floor((fileIndex / downloadable.length) * 100),
+                    {
+                        file: 100,
+                        total: Math.floor((fileIndex / totalFiles) * 100),
+                        fileLabel,
+                        totalLabel,
+                    },
                 );
             }
             catch (e) {

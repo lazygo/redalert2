@@ -165,6 +165,6 @@ export class ResourceLoader {
         return new LoaderResult(resultsMap);
     }
     protected async fetchResource(url: string, cancellationToken?: CancellationToken, options?: FetchResourceOptions): Promise<ArrayBuffer> {
-        return await this.httpRequest.fetchRaw(url, cancellationToken as any, options?.onProgress as any);
+        return await this.httpRequest.fetchRaw(url, cancellationToken as any, options);
     }
 }
