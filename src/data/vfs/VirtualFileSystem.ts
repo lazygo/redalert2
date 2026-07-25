@@ -1,6 +1,7 @@
 import { AudioBagFile } from "../AudioBagFile";
 import { IdxFile } from "../IdxFile";
 import { MixFile } from "../MixFile";
+import { LazyMixFile } from "../LazyMixFile";
 import { EngineType } from "../../engine/EngineType";
 import { pad } from "../../util/string";
 import { FileNotFoundError } from "./FileNotFoundError";
@@ -52,6 +53,9 @@ export class VirtualFileSystem {
     }
     hasArchive(name: string): boolean {
         return this.allArchives.has(name);
+    }
+    getArchive(name: string): Archive | undefined {
+        return this.allArchives.get(name);
     }
     removeArchive(name: string): void {
         const archive = this.allArchives.get(name);
@@ -117,7 +121,27 @@ export class VirtualFileSystem {
             this.logger.warn(`Could not open "${filename}" via RFS to add as archive.`);
         }
     }
-    async addMixFile(filename: string): Promise<void> {
+    async addMixFile(filename: string, options?: { lazy?: boolean }): Promise<void> {
+        if (options?.lazy) {
+            if (this.allArchives.has(filename)) {
+                this.logger.info(`Archive "${filename}" already loaded, skipping.`);
+                return;
+            }
+            try {
+                const rawFile = await this.rfs.getRawFile(filename);
+                const lazyMix = await LazyMixFile.fromFile(rawFile, filename);
+                // Hydrate once so first-frame openFile works even if sync XHR is blocked.
+                await lazyMix.hydrate();
+                this.addArchive(lazyMix, filename);
+                return;
+            }
+            catch (error) {
+                this.logger.warn(
+                    `LazyMixFile pilot failed for "${filename}", falling back to classic MixFile`,
+                    error,
+                );
+            }
+        }
         await this.addArchiveByFilename(filename, async (fileStreamHolder) => {
             if (filename === "ra2.mix") {
                 this.logger.info(`Testing original MixFile implementation for ${filename}...`);
