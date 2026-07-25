@@ -111,10 +111,15 @@ function ResponseCell({ ms, strings }: { ms?: number; strings: Strings }) {
         return null;
     }
     const capped = Math.min(RESPONSE_METER_MAX_MS, Math.max(0, ms));
+    const ratio = capped / RESPONSE_METER_MAX_MS;
     const label = ms >= RESPONSE_METER_MAX_MS ? `${RESPONSE_METER_MAX_MS}+ms` : `${Math.round(ms)}ms`;
+    const level = capped <= 150 ? 'good' : capped <= 500 ? 'warn' : 'bad';
     return (
-        <div className="player-response-cell player-ping" title={strings.get("Msg:PingInfo", Math.round(ms))}>
-            <meter value={capped} max={RESPONSE_METER_MAX_MS} low={150} high={500} optimum={0}/>
+        <div
+            className={`player-response-cell player-response-${level}`}
+            title={strings.get("Msg:PingInfo", Math.round(ms))}
+        >
+            <div className="player-response-bar" style={{ width: `${Math.max(6, ratio * 100)}%` }}/>
             <span className="player-response-ms">{label}</span>
         </div>
     );
