@@ -418,6 +418,7 @@
     "GUI:NetPlayHostTag": "Host",
     "GUI:NetPlayNotReadyTag": "Not ready",
     "GUI:NetPlayDisconnectedTag": "Disconnected",
+    "GUI:NetPlayOffline": "Offline",
     "GUI:NetPlayForceLeaveHost": "The host left. The room has been closed.",
     "GUI:NetPlayForceLeaveDisconnect": "Disconnected from the server. You have left the room.",
     "GUI:NetPlayMatchWaitingPlayers": "Waiting for network",
