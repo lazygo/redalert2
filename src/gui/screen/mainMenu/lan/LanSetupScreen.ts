@@ -332,7 +332,7 @@ export class LanSetupScreen extends MainMenuScreen {
             return;
         }
         if (!roomSnapshot.canStart) {
-            this.messageBoxApi.show('当前还有成员未完成连接或地图同步。');
+            this.messageBoxApi.show('当前还有成员未准备、未完成连接或地图同步。');
             return;
         }
         this.roomSession.startGame({

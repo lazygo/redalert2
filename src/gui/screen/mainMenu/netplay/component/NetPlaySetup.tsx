@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LobbyForm } from '@/gui/screen/mainMenu/lobby/component/LobbyForm';
-import { LobbyType } from '@/gui/screen/mainMenu/lobby/component/viewmodel/lobby';
+import { LobbyType, PlayerStatus } from '@/gui/screen/mainMenu/lobby/component/viewmodel/lobby';
 import { PregameController } from '@/gui/screen/mainMenu/lobby/PregameController';
 import { ChatHistory } from '@/gui/chat/ChatHistory';
 import { List, ListItem } from '@/gui/component/List';
@@ -21,10 +21,6 @@ export interface NetPlaySetupProps {
     onCommitName: (name: string) => void;
     onJoinRoom: (roomId: string) => Promise<void>;
     onHostPregameChanged: () => void;
-    onStartGame: () => Promise<void>;
-    onLeaveRoom: () => Promise<void>;
-    onToggleReady: () => Promise<void>;
-    onChangeMap: () => Promise<void>;
 }
 
 export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
@@ -38,10 +34,6 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
     onCommitName,
     onJoinRoom,
     onHostPregameChanged,
-    onStartGame,
-    onLeaveRoom,
-    onToggleReady,
-    onChangeMap,
 }) => {
     const [nameInput, setNameInput] = useState(transport.getSelf().name);
     const [connected, setConnected] = useState(transport.isConnected());
@@ -109,6 +101,20 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
             chatHistory: chatHistory as any,
             onStateChange: roomSnapshot.isHost ? onHostPregameChanged : undefined,
             maxGameSpeed: GameSpeed.NETPLAY_MAX_SPEED,
+            decoratePlayerSlot: (playerSlot: any, _slotInfo: any, slotIndex: number) => {
+                const assignment = roomSnapshot.roomState?.humanAssignments.find(
+                    (candidate) => candidate.slotIndex === slotIndex
+                );
+                if (!assignment) {
+                    return;
+                }
+                const member = roomSnapshot.members.find((candidate) => candidate.peerId === assignment.peerId);
+                playerSlot.status = member?.isHost
+                    ? PlayerStatus.Host
+                    : member?.ready
+                        ? PlayerStatus.Ready
+                        : PlayerStatus.NotReady;
+            },
         });
         if (!roomSnapshot.isHost && selfAssignment) {
             const requestOwnSlotConfig = (updater: (slot: any) => {
@@ -271,32 +277,6 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
                                 {' · '}
                                 {roomSnapshot.members.map((m) => m.name).join(', ')}
                             </span>
-                        </div>
-                        <div className="lan-actions">
-                            {roomSnapshot.isHost ? (
-                                <>
-                                    <button type="button" className="dialog-button" onClick={() => void onChangeMap()}>
-                                        {strings.get('GUI:NetPlayChangeMap') || '更换地图'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="dialog-button"
-                                        disabled={!roomSnapshot.canStart}
-                                        onClick={() => void onStartGame()}
-                                    >
-                                        {strings.get('GUI:NetPlayStart') || '开始游戏'}
-                                    </button>
-                                </>
-                            ) : (
-                                <button type="button" className="dialog-button" onClick={() => void onToggleReady()}>
-                                    {roomSnapshot.members.find((m) => m.isSelf)?.ready
-                                        ? (strings.get('GUI:NetPlayUnready') || '取消准备')
-                                        : (strings.get('GUI:NetPlayReady') || '准备')}
-                                </button>
-                            )}
-                            <button type="button" className="dialog-button" onClick={() => void onLeaveRoom()}>
-                                {strings.get('GUI:NetPlayLeave') || '离开房间'}
-                            </button>
                         </div>
                     </div>
                     {formProps ? (

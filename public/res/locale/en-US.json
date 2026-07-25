@@ -409,5 +409,8 @@
     "GUI:NetPlayUnready": "Cancel ready",
     "GUI:NetPlayLeave": "Leave room",
     "GUI:NetPlayWaitingConfig": "Syncing room settings...",
-    "GUI:NetPlayJoinTimeout": "Timed out joining room"
+    "GUI:NetPlayJoinTimeout": "Timed out joining room",
+    "GUI:NetPlayNeedReady": "All players must be ready before starting",
+    "GUI:NetPlayStartReadyHint": "All players ready — you can start",
+    "GUI:NetPlayOnlyHostStart": "Only the host can start the game"
 }
