@@ -1676,41 +1676,6 @@ input[type="range"]:focus {
     height: 110px;
 }
 
-#ra2web-root .network-wait-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 120;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.72);
-    pointer-events: all;
-}
-
-#ra2web-root .network-wait-dialog {
-    min-width: min(420px, calc(100vw - 40px));
-    max-width: 560px;
-    padding: 22px 26px 24px;
-    border: 1px red solid;
-    background: rgba(10, 0, 0, 0.96);
-    color: #ffcc7a;
-    box-sizing: border-box;
-}
-
-#ra2web-root .network-wait-dialog h3 {
-    margin: 0 0 10px;
-    color: #fff;
-    font-size: 22px;
-    font-weight: inherit;
-}
-
-#ra2web-root .network-wait-dialog p {
-    margin: 0;
-    line-height: 1.4;
-    color: #ffcc7a;
-}
-
-
 #ra2web-root .lan-dialog {
     width: min(760px, 100%);
     max-height: calc(100vh - 40px);
@@ -1894,13 +1859,30 @@ input[type="range"]:focus {
     left: 20px;
     background: rgba(0, 0, 0, .5);
     padding: 3px;
-    width: 400px;
+    width: 480px;
 }
 
 #ra2web-root .loading-screen .player-status {
     margin-top: 3px;
     display: flex;
     align-items: center;
+}
+
+#ra2web-root .loading-screen .player-kick-btn {
+    margin-left: 10px;
+    padding: 1px 8px;
+    border: 1px solid currentColor;
+    background: rgba(80, 0, 0, 0.85);
+    color: #ffcc7a;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1.2;
+    flex-shrink: 0;
+}
+
+#ra2web-root .loading-screen .player-kick-btn:hover {
+    background: rgba(140, 0, 0, 0.95);
+    color: #fff;
 }
 
 #ra2web-root progress {

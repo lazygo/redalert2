@@ -81,7 +81,6 @@ export class GameScreen extends RootScreen {
     private sidebarModel?: any;
     private loadingScreenApi?: any;
     private lagState = false;
-    private networkWaitEl?: HTMLDivElement;
     private chatTypingHandler?: any;
     private chatNetHandler?: any;
     private lanMatchSession?: LanMatchSession;
@@ -93,6 +92,7 @@ export class GameScreen extends RootScreen {
     private debugMapFile?: any;
     private pausedAtSpeed?: number;
     private gameEndHandled = false;
+    private leaveCleanupDone = false;
     private readonly navigationGuard = new NavigationGuard();
     constructor(private workerHostApi: any, private gservCon: any, private wgameresService: any, private wolService: any, private mapTransferService: any, private engineVersion: string, private engineModHash: string, private errorHandler: any, private gameMenuSubScreens: any, private loadingScreenApiFactory: any, private gameOptsParser: any, private gameOptsSerializer: any, private config: any, private strings: any, private renderer: any, private uiScene: any, private runtimeVars: any, private messageBoxApi: any, private toastApi: any, private uiAnimationLoop: any, private viewport: any, private jsxRenderer: any, private pointer: any, private sound: any, private music: any, private mixer: any, private keyBinds: any, private generalOptions: any, private localPrefs: any, private actionLogger: any, private lockstepLogger: any, private replayManager: any, private fullScreen: any, private mapFileLoader: any, private mapDir: any, private mapList: any, private gameLoader: any, private vxlGeometryPool: any, private buildingImageDataCache: any, private mutedPlayers: any, private tauntsEnabled: any, private speedCheat: any, private sentry: any, private battleControlApi: any) {
         super();
@@ -120,6 +120,7 @@ export class GameScreen extends RootScreen {
     }
     async onEnter(params: any): Promise<void> {
         this.gameEndHandled = false;
+        this.leaveCleanupDone = false;
         this.pointer.lock();
         this.pointer.setVisible(false);
         await this.music?.play(MusicType.Loading);
@@ -358,6 +359,10 @@ export class GameScreen extends RootScreen {
     }
 
     async onLeave(): Promise<void> {
+        if (this.leaveCleanupDone) {
+            return;
+        }
+        this.leaveCleanupDone = true;
         this.navigationGuard.disable();
         this.pointer.unlock();
         const hadGameAnimationLoop = Boolean(this.gameAnimationLoop);
@@ -367,6 +372,12 @@ export class GameScreen extends RootScreen {
         }
         this.restoreRendererToUiOnly();
         this.clearDebugBridge();
+        try {
+            this.playerUi?.dispose?.();
+        } catch (error) {
+            console.warn('[GameScreen.onLeave] playerUi dispose failed', error);
+        }
+        this.playerUi = undefined;
         if (this.hud) {
             this.uiScene.remove(this.hud);
             this.hud.destroy();
@@ -374,10 +385,15 @@ export class GameScreen extends RootScreen {
         }
         this.gameTurnMgr?.dispose();
         this.gameTurnMgr = undefined;
-        this.lanMatchSession?.leaveRoom();
-        this.lanMatchSession?.dispose();
+        try {
+            this.lanMatchSession?.leaveRoom();
+            this.lanMatchSession?.dispose();
+        } catch (error) {
+            console.warn('[GameScreen.onLeave] match session cleanup failed', error);
+        }
         this.lanMatchSession = undefined;
-        this.hideNetworkWaitOverlay();
+        this.loadingScreenApi?.dispose();
+        this.loadingScreenApi = undefined;
         this.disposables.dispose();
         // Drop in-memory VXL meshes; next match reloads from disk cache / rebuilds.
         try {
@@ -688,6 +704,10 @@ export class GameScreen extends RootScreen {
         );
         const onLagStateChange = (lagState: boolean) => {
             this.lagState = lagState;
+            // While lockstep is stuck, keep probing so soft disconnect / wait UI can arm quickly.
+            if (lagState && this.lanMatchSession) {
+                this.lanMatchSession.noteTurnStall(this.game?.currentTick ?? 0);
+            }
         };
         lockstepManager.onLagStateChange.subscribe(onLagStateChange);
         this.disposables.add(() => lockstepManager.onLagStateChange.unsubscribe(onLagStateChange));
@@ -696,39 +716,85 @@ export class GameScreen extends RootScreen {
     }
 
     private bindNetworkWaitOverlay(lanMatchSession: LanMatchSession): void {
-        const updateOverlay = (snapshot: ReturnType<LanMatchSession['getSnapshot']>) => {
-            if (snapshot.localReconnecting) {
-                this.showNetworkWaitOverlay(
-                    this.strings.get('GUI:NetPlayMatchReconnecting') || '网络中断，正在重连…',
-                    this.strings.get('GUI:NetPlayMatchReconnectHint') || '请保持页面打开，正在尝试恢复对局连接。'
-                );
-                return;
-            }
-            if (snapshot.waitingReconnectPeerIds.length) {
-                const names = snapshot.waitingReconnectPeerIds
-                    .map((peerId) => {
-                        const assignment = lanMatchSession.getHumanAssignment(peerId);
-                        const member = snapshot.transportMembers.find((entry) => entry.id === peerId);
-                        return assignment?.name || (member as { name?: string })?.name || peerId;
-                    })
-                    .join('、');
-                this.showNetworkWaitOverlay(
-                    this.strings.get('GUI:NetPlayMatchWaitingPlayers') || '网络等待',
-                    (this.strings.get('GUI:NetPlayMatchWaitingPlayersHint') || '正在等待玩家重连：%s').replace('%s', names)
-                );
-                return;
-            }
-            this.hideNetworkWaitOverlay();
+        let networkWaitVisible = false;
+        const setHudVisibleForNetworkWait = (waiting: boolean) => {
+            // Same 800×600 loading page as game start — hide HUD so the side column is gone.
+            this.hud?.setVisible(!waiting);
         };
-        updateOverlay(lanMatchSession.getSnapshot());
-        lanMatchSession.onSnapshotChange.subscribe(updateOverlay);
+        const setWorldVisibleForNetworkWait = (waiting: boolean) => {
+            // Match game-start look: only uiScene + loading card (no live battlefield behind).
+            const worldScene = this.activeWorldScene;
+            if (!worldScene || !this.renderer) {
+                return;
+            }
+            if (waiting) {
+                this.renderer.removeScene(worldScene);
+                return;
+            }
+            this.renderer.removeScene(this.uiScene);
+            this.renderer.addScene(worldScene);
+            this.renderer.addScene(this.uiScene);
+        };
+        const setPointerForNetworkWait = (waiting: boolean) => {
+            // Unlock so the host can click Kick on the wait page.
+            if (waiting) {
+                this.pointer.unlock();
+                this.pointer.setVisible(true);
+                this.playerUi?.worldInteraction?.setEnabled?.(false);
+                return;
+            }
+            this.playerUi?.worldInteraction?.setEnabled?.(true);
+            this.pointer.lock();
+            this.pointer.setVisible(false);
+        };
+        const updateWaitUi = (snapshot: ReturnType<LanMatchSession['getSnapshot']>) => {
+            const api = this.loadingScreenApi;
+            if (!api?.beginNetworkWait || !api.hideNetworkWait) {
+                return;
+            }
+            const shouldShow = snapshot.localReconnecting || snapshot.waitingReconnectPeerIds.length > 0;
+            if (shouldShow) {
+                api.beginNetworkWait();
+                if (!networkWaitVisible) {
+                    networkWaitVisible = true;
+                    setHudVisibleForNetworkWait(true);
+                    setWorldVisibleForNetworkWait(true);
+                    setPointerForNetworkWait(true);
+                }
+                return;
+            }
+            if (networkWaitVisible) {
+                networkWaitVisible = false;
+                api.hideNetworkWait();
+                setHudVisibleForNetworkWait(false);
+                setWorldVisibleForNetworkWait(false);
+                setPointerForNetworkWait(false);
+            }
+        };
+        updateWaitUi(lanMatchSession.getSnapshot());
+        lanMatchSession.onSnapshotChange.subscribe(updateWaitUi);
         this.disposables.add(() => {
-            lanMatchSession.onSnapshotChange.unsubscribe(updateOverlay);
-            this.hideNetworkWaitOverlay();
+            lanMatchSession.onSnapshotChange.unsubscribe(updateWaitUi);
+            this.loadingScreenApi?.hideNetworkWait?.();
+            if (networkWaitVisible) {
+                networkWaitVisible = false;
+                setHudVisibleForNetworkWait(false);
+                setWorldVisibleForNetworkWait(false);
+                setPointerForNetworkWait(false);
+            }
         });
 
         const onResumeFailed = () => {
-            this.hideNetworkWaitOverlay();
+            // Unlock so the classic message-box confirm button can receive clicks.
+            this.pointer.unlock();
+            this.pointer.setVisible(true);
+            this.gameTurnMgr?.setErrorState?.();
+            this.loadingScreenApi?.hideNetworkWait?.();
+            if (networkWaitVisible) {
+                networkWaitVisible = false;
+                setHudVisibleForNetworkWait(false);
+                setWorldVisibleForNetworkWait(false);
+            }
             this.messageBoxApi.show(
                 this.strings.get('GUI:NetPlayMatchResumeFailed') || '无法恢复对局连接，即将退出。',
                 this.strings.get('GUI:Ok') || '确定',
@@ -743,44 +809,46 @@ export class GameScreen extends RootScreen {
 
     private async leaveAfterMatchDisconnect(): Promise<void> {
         try {
-            this.lanMatchSession?.leaveRoom();
-        } catch {
-            // ignore
+            this.pointer.unlock();
+            this.pointer.setVisible(true);
+            this.gameTurnMgr?.setErrorState?.();
+            this.loadingScreenApi?.hideNetworkWait?.();
+            this.messageBoxApi.destroy();
+            try {
+                this.lanMatchSession?.leaveRoom();
+            } catch {
+                // ignore
+            }
+            // Do not call onLeave() here — goToScreen() pops the current screen and invokes it.
+            const route = this.returnTo ?? new MainMenuRoute(MainMenuScreenType.Home, undefined);
+            if (!this.controller) {
+                console.error('[GameScreen] leaveAfterMatchDisconnect: controller missing');
+                await this.onLeave();
+                return;
+            }
+            this.controller.goToScreen(ScreenType.MainMenuRoot, { route });
+        } catch (error) {
+            console.error('[GameScreen] leaveAfterMatchDisconnect failed', error);
+            try {
+                await this.onLeave();
+            } catch {
+                // ignore
+            }
+            this.controller?.goToScreen(ScreenType.MainMenuRoot, {
+                route: this.returnTo ?? new MainMenuRoute(MainMenuScreenType.Home, undefined),
+            });
         }
-        await this.onLeave();
-        const route = this.returnTo ?? new MainMenuRoute(MainMenuScreenType.Home, undefined);
-        this.controller?.goToScreen(ScreenType.MainMenuRoot, { route });
     }
 
-    private showNetworkWaitOverlay(title: string, body: string): void {
-        const root = document.getElementById('ra2web-root') || document.body;
-        if (!this.networkWaitEl) {
-            this.networkWaitEl = document.createElement('div');
-            this.networkWaitEl.className = 'network-wait-overlay';
-            root.appendChild(this.networkWaitEl);
-        }
-        this.networkWaitEl.innerHTML =
-            `<div class="network-wait-dialog">` +
-            `<h3>${this.escapeHtml(title)}</h3>` +
-            `<p>${this.escapeHtml(body)}</p>` +
-            `</div>`;
-    }
-
-    private hideNetworkWaitOverlay(): void {
-        this.networkWaitEl?.remove();
-        this.networkWaitEl = undefined;
-    }
-
-    private escapeHtml(text: string): string {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
     private onGameStart(localPlayer: any, game: any, uiInitResult: any, actionQueue: any, actionFactory: any, replay: any): void {
         this.localPrefs.removeItem(StorageKey.LastConnection);
-        this.loadingScreenApi?.dispose();
+        // Keep Lan loading-screen API alive so mid-match reconnect can reuse the classic fullscreen page.
+        if (typeof this.loadingScreenApi?.endLoading === 'function') {
+            this.loadingScreenApi.endLoading();
+        } else {
+            this.loadingScreenApi?.dispose();
+            this.loadingScreenApi = undefined;
+        }
         this.music?.play(MusicType.Normal);
         const evaSpecs = new EvaSpecs(SideType.GDI).readIni(Engine.getIni('eva.ini'));
         const eva = new Eva(evaSpecs, this.sound, this.renderer);

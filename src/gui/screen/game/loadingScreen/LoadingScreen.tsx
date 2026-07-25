@@ -15,6 +15,7 @@ interface PlayerInfo {
     country?: Country;
     color: string;
     team: number;
+    showKick?: boolean;
 }
 interface Viewport {
     x: number;
@@ -33,6 +34,7 @@ interface LoadingScreenProps {
     };
     countryUiNames: Map<string, string>;
     mapName: string;
+    onKickPlayer?: (playerName: string) => void;
 }
 const countrySpecialUnits = new Map<string, string>()
     .set("Americans", "Name:Para")
@@ -87,6 +89,7 @@ export class LoadingScreen extends React.Component<LoadingScreenProps> {
     }
     private renderStatus(player: PlayerInfo, showTeams: boolean): React.ReactElement {
         const opacity = player.status === PlayerConnectionStatus.Connected ? 1 : 0.5;
+        const kickLabel = this.props.strings.get("GUI:NetPlayKick") || "Kick";
         return (<div key={player.name} className="player-status" style={{ opacity, color: player.color }}>
         {showTeams && (<span className="player-team">
             {player.country !== undefined &&
@@ -97,6 +100,19 @@ export class LoadingScreen extends React.Component<LoadingScreenProps> {
         <span className="player-name">
           {player.name}
         </span>
+        {player.showKick && this.props.onKickPlayer ? (
+          <button
+            type="button"
+            className="player-kick-btn"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              this.props.onKickPlayer?.(player.name);
+            }}
+          >
+            {kickLabel}
+          </button>
+        ) : null}
       </div>);
     }
     private getStyle(bgImageSrc?: string): React.CSSProperties {
