@@ -51,27 +51,60 @@ interface ExtendedPlayerInfo {
     country: Country;
     color: string;
     team: number;
+    showKick?: boolean;
 }
 
+/**
+ * Same classic LoadingScreen as game start. After initial load, beginNetworkWait()
+ * recreates that page while peers reconnect (progress bars + optional kick).
+ */
 export class LanLoadingScreenApi implements LoadingScreenApi {
     private lastLoadPercent = 0;
     private disposables = new CompositeDisposable();
+    private screenDisposables = new CompositeDisposable();
     private players?: Player[];
     private localPlayerName?: string;
     private mapName?: string;
     private loadingScreen?: any;
+    /** True while mid-match reconnect page is showing (not a LoadingScreen prop). */
+    private reconnectWaitActive = false;
+    private initialLoadDone = false;
 
     private handleLanMatchUpdate = () => {
         if (!this.players || !this.localPlayerName || !this.mapName) {
             return;
         }
+        if (this.initialLoadDone && !this.reconnectWaitActive) {
+            return;
+        }
+        if (this.reconnectWaitActive) {
+            const snapshot = this.lanMatchSession.getSnapshot();
+            const shouldShow = snapshot.localReconnecting || snapshot.waitingReconnectPeerIds.length > 0;
+            if (!shouldShow) {
+                this.hideNetworkWait();
+                return;
+            }
+        }
         if (this.loadingScreen) {
             this.loadingScreen.applyOptions((options: any) => {
                 options.playerInfos = this.createExtendedLoadingInfos();
+                options.onKickPlayer = this.reconnectWaitActive ? this.handleKickPlayer : undefined;
             });
             return;
         }
         this.createLoadingScreen();
+    };
+
+    private handleKickPlayer = (playerName: string) => {
+        if (!this.reconnectWaitActive) {
+            return;
+        }
+        const descriptor = this.lanMatchSession.getLaunchDescriptor();
+        const assignment = descriptor.humanAssignments.find((entry) => entry.name === playerName);
+        if (!assignment) {
+            return;
+        }
+        this.lanMatchSession.forceDropWaitingPeers([assignment.peerId]);
     };
 
     constructor(
@@ -87,6 +120,8 @@ export class LanLoadingScreenApi implements LoadingScreenApi {
         this.players = players;
         this.localPlayerName = localPlayerName;
         this.mapName = mapName;
+        this.initialLoadDone = false;
+        this.reconnectWaitActive = false;
         this.lanMatchSession.onSnapshotChange.subscribe(this.handleLanMatchUpdate);
         this.disposables.add(() => this.lanMatchSession.onSnapshotChange.unsubscribe(this.handleLanMatchUpdate));
         this.handleLanMatchUpdate();
@@ -102,6 +137,31 @@ export class LanLoadingScreenApi implements LoadingScreenApi {
         this.handleLanMatchUpdate();
     }
 
+    /** Hide the initial loading page but keep this API alive for mid-match reconnect. */
+    endLoading(): void {
+        this.initialLoadDone = true;
+        this.reconnectWaitActive = false;
+        this.destroyScreen();
+    }
+
+    /** Recreate the classic start loading page while a peer reconnects. */
+    beginNetworkWait(): void {
+        if (!this.players || !this.localPlayerName || !this.mapName) {
+            return;
+        }
+        this.reconnectWaitActive = true;
+        this.handleLanMatchUpdate();
+    }
+
+    hideNetworkWait(): void {
+        // Do not destroy the initial load page while waiting for slower peers.
+        if (!this.reconnectWaitActive) {
+            return;
+        }
+        this.reconnectWaitActive = false;
+        this.destroyScreen();
+    }
+
     private createExtendedLoadingInfos(): ExtendedPlayerInfo[] {
         const colors = [...this.rules.getMultiplayerColors().values()];
         const countries = this.rules.getMultiplayerCountries();
@@ -109,24 +169,53 @@ export class LanLoadingScreenApi implements LoadingScreenApi {
         const descriptor = this.lanMatchSession.getLaunchDescriptor();
         const assignmentByName = new Map(descriptor.humanAssignments.map((assignment) => [assignment.name, assignment.peerId] as [string, string]));
         const transportByPeerId = new Map(lanSnapshot.transportMembers.map((member) => [member.id, member]));
+        const waitingIds = new Set(lanSnapshot.waitingReconnectPeerIds);
+        const canKick = this.reconnectWaitActive
+            && !lanSnapshot.localReconnecting
+            && this.lanMatchSession.isLocalControlPeer();
         const hasTeams = this.players?.every((player) => player.countryId === OBS_COUNTRY_ID || player.teamId !== NO_TEAM_ID);
         const extendedInfos = (this.players ?? []).map((player) => {
             const peerId = assignmentByName.get(player.name);
             const transportMember = peerId ? transportByPeerId.get(peerId) : undefined;
-            const status = !transportMember
-                ? PlayerConnectionStatus.Disconnected
-                : transportMember.isSelf || transportMember.status === 'connected'
-                    ? PlayerConnectionStatus.Connected
-                    : PlayerConnectionStatus.Lagging;
+            let status: PlayerConnectionStatus;
+            let loadPercent: number;
+            if (this.reconnectWaitActive) {
+                const waiting = peerId ? waitingIds.has(peerId) : false;
+                const selfReconnecting = lanSnapshot.localReconnecting && transportMember?.isSelf;
+                if (waiting || selfReconnecting) {
+                    status = PlayerConnectionStatus.Disconnected;
+                    loadPercent = peerId
+                        ? (lanSnapshot.reconnectRemainPercentByPeerId?.[peerId] ?? 0)
+                        : 0;
+                } else {
+                    status = PlayerConnectionStatus.Connected;
+                    loadPercent = 100;
+                }
+            } else {
+                status = !transportMember
+                    ? PlayerConnectionStatus.Disconnected
+                    : transportMember.isSelf || transportMember.status === 'connected'
+                        ? PlayerConnectionStatus.Connected
+                        : PlayerConnectionStatus.Lagging;
+                loadPercent = peerId ? lanSnapshot.loadPercentByPeerId[peerId] ?? 0 : 0;
+            }
+            const showKick = Boolean(
+                canKick
+                && peerId
+                && !transportMember?.isSelf
+                && status === PlayerConnectionStatus.Disconnected
+                && waitingIds.has(peerId)
+            );
             return {
                 name: player.name,
                 status,
-                loadPercent: peerId ? lanSnapshot.loadPercentByPeerId[peerId] ?? 0 : 0,
+                loadPercent,
                 country: countries[player.countryId],
                 color: player.countryId === OBS_COUNTRY_ID
                     ? '#fff'
                     : colors[player.colorId].asHexString(),
                 team: player.teamId,
+                showKick,
             };
         });
 
@@ -142,6 +231,7 @@ export class LanLoadingScreenApi implements LoadingScreenApi {
     }
 
     private createLoadingScreen(): void {
+        this.destroyScreen();
         const [uiObject] = this.jsxRenderer.render(jsx(LoadingScreenWrapper, {
             ref: (ref: any) => (this.loadingScreen = ref),
             strings: this.strings,
@@ -151,13 +241,26 @@ export class LanLoadingScreenApi implements LoadingScreenApi {
             mapName: this.mapName!,
             playerInfos: this.createExtendedLoadingInfos(),
             gameResConfig: this.gameResConfig,
+            onKickPlayer: this.reconnectWaitActive ? this.handleKickPlayer : undefined,
         }));
         this.uiScene.add(uiObject);
-        this.disposables.add(uiObject, () => this.uiScene.remove(uiObject), () => (this.loadingScreen = undefined));
+        this.screenDisposables.add(uiObject, () => this.uiScene.remove(uiObject), () => (this.loadingScreen = undefined));
+    }
+
+    private destroyScreen(): void {
+        this.screenDisposables.dispose();
+        this.screenDisposables = new CompositeDisposable();
+        this.loadingScreen = undefined;
     }
 
     dispose(): void {
+        this.destroyScreen();
         this.disposables.dispose();
+        this.players = undefined;
+        this.localPlayerName = undefined;
+        this.mapName = undefined;
+        this.reconnectWaitActive = false;
+        this.initialLoadDone = false;
     }
 
     updateViewport(): void {

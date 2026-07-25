@@ -79,6 +79,13 @@ export class LanLockstepTurnManager {
             return false;
         }
 
+        // Do not submit or consume while the local relay is down — otherwise this
+        // client runs ahead and deletes turns peers still need after resume.
+        if (this.matchSession.isLockstepFrozen()) {
+            this.updateLagState(true, this.game.currentTick);
+            return false;
+        }
+
         const tick = this.game.currentTick;
         if (this.game.status !== GameStatus.Ended) {
             // Submit lookahead ahead of execution so peers can keep the sim fed.

@@ -57,6 +57,19 @@ interface LanGameLoadProgressMessage {
     loadPercent: number;
 }
 
+interface LanGameForceDropMessage {
+    type: 'lan-game-force-drop';
+    gameId: string;
+    fromPeerId: string;
+    targetPeerIds: string[];
+}
+
+interface LanGameTurnResyncMessage {
+    type: 'lan-game-turn-resync';
+    gameId: string;
+    fromPeerId: string;
+}
+
 export interface LanMatchTurnBatch {
     tick: number;
     peerId: string;
@@ -80,6 +93,8 @@ export interface LanMatchSnapshotState {
     activePeerIds: string[];
     suspectedDropPeerIds: string[];
     waitingReconnectPeerIds: string[];
+    /** 0–100 remaining grace for peers currently waiting to reconnect. */
+    reconnectRemainPercentByPeerId: Record<string, number>;
     localReconnecting: boolean;
     bufferedTicks: number[];
     batchPeerIdsByTick: Record<number, string[]>;
@@ -91,6 +106,12 @@ export interface LanMatchSnapshotState {
 
 /** Wait this long for a disconnected peer to resume before DropPlayer. */
 export const MATCH_RECONNECT_GRACE_MS = 45_000;
+/** Start stall recovery (turn resync) after lockstep is stuck this long. */
+export const TURN_STALL_WAIT_UI_MS = 600;
+/** While stuck on missing turns, ask peers to resend at most this often. */
+const TURN_STALL_RESYNC_INTERVAL_MS = 1_500;
+/** Keep resolved local turns so a peer who fell behind can still catch up after resume. */
+const RESOLVED_TURN_ARCHIVE_MAX = 240;
 
 function sortAssignments(assignments: LanHumanAssignment[]): LanHumanAssignment[] {
     return assignments
@@ -143,7 +164,14 @@ export class LanMatchSession {
     private readonly activePeerIds = new Set<string>();
     private readonly suspectedDropPeerIds = new Set<string>();
     private readonly reconnectDeadlineByPeerId = new Map<string, number>();
+    private localReconnectDeadline?: number;
+    private stallTick?: number;
+    private stallStartedAt?: number;
+    private lastStallResyncAt = 0;
+    private turnResyncTimers: ReturnType<typeof setTimeout>[] = [];
     private readonly turnBatchesByTick = new Map<number, Map<string, LanMatchTurnBatch>>();
+    /** Local turns already consumed — still resent on resync if another peer is behind. */
+    private readonly resolvedLocalTurnArchive = new Map<number, LanMatchTurnBatch>();
     private readonly localTurnIdByTick = new Map<number, string>();
     private readonly loadPercentByPeerId = new Map<string, number>();
     private graceCheckTimer?: ReturnType<typeof setInterval>;
@@ -202,11 +230,29 @@ export class LanMatchSession {
     };
 
     private handleTransportConnectionStatus = (status: string): void => {
-        if (status === 'connected') {
-            this.resendPendingLocalTurns();
+        if (status === 'reconnecting' || status === 'disconnected') {
+            if (!this.localReconnectDeadline) {
+                this.localReconnectDeadline = Date.now() + MATCH_RECONNECT_GRACE_MS;
+            }
+        } else if (status === 'connected') {
+            this.localReconnectDeadline = undefined;
+            this.clearTurnStall();
+            // Room membership / relay may settle a beat after welcome — resync twice.
+            this.scheduleTurnResync(300);
+            this.scheduleTurnResync(1200);
         }
         this.dispatchSnapshot();
     };
+
+    private scheduleTurnResync(delayMs: number): void {
+        const timer = setTimeout(() => {
+            this.turnResyncTimers = this.turnResyncTimers.filter((entry) => entry !== timer);
+            if (!this.disposed && !this.isLockstepFrozen()) {
+                this.performTurnResync();
+            }
+        }, delayMs);
+        this.turnResyncTimers.push(timer);
+    }
 
     private handleMatchResumeFailed = (): void => {
         this.onMatchResumeFailed.dispatch(this);
@@ -221,6 +267,8 @@ export class LanMatchSession {
             clearInterval(this.graceCheckTimer);
             this.graceCheckTimer = undefined;
         }
+        this.turnResyncTimers.forEach((timer) => clearTimeout(timer));
+        this.turnResyncTimers = [];
         this.connectionStatusDispatcher?.unsubscribe(this.handleTransportConnectionStatus);
         this.resumeFailedDispatcher?.unsubscribe(this.handleMatchResumeFailed);
         (this.transport as { setMatchReconnect?: (enabled: boolean) => void }).setMatchReconnect?.(false);
@@ -268,6 +316,67 @@ export class LanMatchSession {
 
     areAllPlayersLoaded(): boolean {
         return this.getOrderedActivePeerIds().every((peerId) => (this.loadPercentByPeerId.get(peerId) ?? 0) >= 100);
+    }
+
+    /**
+     * Control peer (effective host for lockstep drops) can immediately end reconnect
+     * wait for lagging/disconnected peers and schedule DropPlayer on the next resolved turn.
+     */
+    forceDropWaitingPeers(peerIds: string[]): boolean {
+        if (this.disposed || !peerIds.length) {
+            return false;
+        }
+        const localPeerId = this.transport.getSelf().id;
+        if (this.getControlPeerId() !== localPeerId) {
+            return false;
+        }
+        const targets = [...new Set(peerIds)].filter((peerId) => {
+            if (peerId === localPeerId || !this.activePeerIds.has(peerId)) {
+                return false;
+            }
+            return this.reconnectDeadlineByPeerId.has(peerId) || this.suspectedDropPeerIds.has(peerId);
+        });
+        if (!targets.length) {
+            return false;
+        }
+        this.applyForceDrop(targets);
+        try {
+            this.transport.broadcastAppMessage({
+                type: 'lan-game-force-drop',
+                gameId: this.descriptor.gameId,
+                fromPeerId: localPeerId,
+                targetPeerIds: this.getSortedPeerIds(new Set(targets)),
+            } satisfies LanGameForceDropMessage);
+        } catch {
+            // Local drop still applies; peers catch up when control turns refresh.
+        }
+        return true;
+    }
+
+    isLocalControlPeer(): boolean {
+        return this.getControlPeerId() === this.transport.getSelf().id;
+    }
+
+    /**
+     * While the local socket is down, freeze lockstep so this client cannot consume
+     * turns and run ahead of peers who never received our broadcasts.
+     */
+    isLockstepFrozen(): boolean {
+        if (this.disposed) {
+            return true;
+        }
+        const transport = this.transport as {
+            getConnectionStatus?: () => string;
+            isConnected?: () => boolean;
+        };
+        const status = transport.getConnectionStatus?.();
+        if (status === 'reconnecting' || status === 'disconnected') {
+            return true;
+        }
+        if (typeof transport.isConnected === 'function' && !transport.isConnected()) {
+            return true;
+        }
+        return false;
     }
 
     submitLocalTurn(tick: number, actionData: Uint8Array): string {
@@ -323,36 +432,68 @@ export class LanMatchSession {
 
     private resendPendingLocalTurns(): void {
         const localPeerId = this.transport.getSelf().id;
+        if (!localPeerId) {
+            return;
+        }
+        const pendingTicks: number[] = [];
         this.localTurnIdByTick.forEach((turnId, tick) => {
             const batch = this.turnBatchesByTick.get(tick)?.get(localPeerId);
             if (batch && batch.turnId === turnId) {
                 this.broadcastLocalTurn(batch);
+                pendingTicks.push(tick);
             }
+        });
+        // Also rebroadcast recently resolved local turns so a peer who froze behind can catch up.
+        const archivedTicks: number[] = [];
+        this.resolvedLocalTurnArchive.forEach((batch, tick) => {
+            if (this.localTurnIdByTick.has(tick)) {
+                return;
+            }
+            this.broadcastLocalTurn(batch);
+            archivedTicks.push(tick);
+        });
+        logLanMatch('resend-pending-local-turns', {
+            localPeerId,
+            pendingTicks: pendingTicks.sort((a, b) => a - b),
+            archivedTicks: archivedTicks.sort((a, b) => a - b),
         });
     }
 
     tryConsumeTurn(tick: number): LanResolvedTurn | undefined {
+        if (this.isLockstepFrozen()) {
+            return undefined;
+        }
         const tickBatches = this.turnBatchesByTick.get(tick);
         if (!tickBatches) {
+            this.noteTurnStall(tick);
             return undefined;
         }
 
         const controlPeerId = this.getControlPeerId();
         const controlBatch = tickBatches.get(controlPeerId);
         if (!controlBatch) {
+            this.noteTurnStall(tick);
             return undefined;
         }
 
         const dropPeerIds = controlBatch.dropPeerIds.filter((peerId) => this.activePeerIds.has(peerId));
         const expectedPeerIds = this.getOrderedActivePeerIds().filter((peerId) => !dropPeerIds.includes(peerId));
         if (expectedPeerIds.some((peerId) => !tickBatches.has(peerId))) {
+            this.noteTurnStall(tick);
             return undefined;
         }
+
+        this.clearTurnStall();
 
         const resolvedBatches = expectedPeerIds
             .map((peerId) => tickBatches.get(peerId))
             .filter((batch): batch is LanMatchTurnBatch => Boolean(batch))
             .map(cloneBatch);
+
+        const localBatch = tickBatches.get(this.transport.getSelf().id);
+        if (localBatch) {
+            this.archiveResolvedLocalTurn(localBatch);
+        }
 
         this.turnBatchesByTick.delete(tick);
         this.commitDrops(dropPeerIds);
@@ -379,6 +520,97 @@ export class LanMatchSession {
         };
     }
 
+    private archiveResolvedLocalTurn(batch: LanMatchTurnBatch): void {
+        this.resolvedLocalTurnArchive.set(batch.tick, cloneBatch(batch));
+        if (this.resolvedLocalTurnArchive.size <= RESOLVED_TURN_ARCHIVE_MAX) {
+            return;
+        }
+        const oldestTick = Math.min(...this.resolvedLocalTurnArchive.keys());
+        this.resolvedLocalTurnArchive.delete(oldestTick);
+    }
+
+    /**
+     * Lockstep is blocked waiting for peer turns.
+     * - Still-connected peers: throttle turn resync (packet loss / post-resume race).
+     * - Truly disconnected peers: open reconnect grace + wait UI.
+     * Never put online peers into drop-grace — that showed the wait page with no recovery.
+     */
+    noteTurnStall(tick: number): void {
+        if (this.disposed) {
+            return;
+        }
+        const missingPeerIds = this.getMissingPeerIdsForTick(tick);
+        if (!missingPeerIds.length) {
+            this.clearTurnStall();
+            return;
+        }
+        const now = Date.now();
+        if (this.stallTick !== tick) {
+            this.stallTick = tick;
+            this.stallStartedAt = now;
+            this.lastStallResyncAt = 0;
+        }
+        const stalledFor = now - (this.stallStartedAt ?? now);
+        if (stalledFor < TURN_STALL_WAIT_UI_MS) {
+            return;
+        }
+
+        if (now - this.lastStallResyncAt >= TURN_STALL_RESYNC_INTERVAL_MS) {
+            this.lastStallResyncAt = now;
+            this.performTurnResync();
+        }
+
+        const memberById = new Map(this.lastSnapshot.members.map((member) => [member.id, member]));
+        const connectedPeerIds = new Set(
+            this.lastSnapshot.members
+                .filter((member) => member.isSelf || member.status === 'connected' || member.status === 'self')
+                .map((member) => member.id)
+        );
+
+        let startedGrace = false;
+        missingPeerIds.forEach((peerId) => {
+            if (this.suspectedDropPeerIds.has(peerId) || this.reconnectDeadlineByPeerId.has(peerId)) {
+                return;
+            }
+            // Online peers are recovered via resync above — do not fake a disconnect wait.
+            if (connectedPeerIds.has(peerId)) {
+                return;
+            }
+            const member = memberById.get(peerId);
+            if (member?.status === 'disconnected' || !member) {
+                this.reconnectDeadlineByPeerId.set(peerId, now + MATCH_RECONNECT_GRACE_MS);
+                startedGrace = true;
+            }
+        });
+        if (startedGrace) {
+            this.dispatchSnapshot();
+        }
+    }
+
+    private clearTurnStall(): void {
+        this.stallTick = undefined;
+        this.stallStartedAt = undefined;
+        this.lastStallResyncAt = 0;
+    }
+
+    private getMissingPeerIdsForTick(tick: number): string[] {
+        const tickBatches = this.turnBatchesByTick.get(tick);
+        const expectedPeerIds = this.getOrderedActivePeerIds().filter(
+            (peerId) => !this.suspectedDropPeerIds.has(peerId)
+        );
+        if (!tickBatches) {
+            return expectedPeerIds;
+        }
+        const controlPeerId = this.getControlPeerId();
+        if (!tickBatches.has(controlPeerId)) {
+            return expectedPeerIds.filter((peerId) => !tickBatches.has(peerId));
+        }
+        const dropPeerIds = new Set(
+            (tickBatches.get(controlPeerId)?.dropPeerIds ?? []).filter((peerId) => this.activePeerIds.has(peerId))
+        );
+        return expectedPeerIds.filter((peerId) => !dropPeerIds.has(peerId) && !tickBatches.has(peerId));
+    }
+
     private handleSnapshotChange(snapshot: LanMatchTransportSnapshot, _source: unknown): void {
         this.lastSnapshot = snapshot;
         const memberById = new Map(snapshot.members.map((member) => [member.id, member]));
@@ -389,9 +621,15 @@ export class LanMatchSession {
         );
 
         const now = Date.now();
+        const reconnectedPeerIds: string[] = [];
         this.getOrderedActivePeerIds().forEach((peerId) => {
             if (connectedPeerIds.has(peerId)) {
+                // Peer is back online — clear grace wait and ask everyone to resend buffered turns.
+                if (this.reconnectDeadlineByPeerId.has(peerId)) {
+                    reconnectedPeerIds.push(peerId);
+                }
                 this.reconnectDeadlineByPeerId.delete(peerId);
+                this.suspectedDropPeerIds.delete(peerId);
                 return;
             }
             if (this.suspectedDropPeerIds.has(peerId)) {
@@ -411,6 +649,12 @@ export class LanMatchSession {
 
         this.evaluateReconnectGrace();
         this.refreshLocalControlTurns();
+        if (reconnectedPeerIds.length) {
+            // Staying peers must rebroadcast turns the returnee missed while offline.
+            this.clearTurnStall();
+            this.performTurnResync();
+            this.scheduleTurnResync(800);
+        }
         this.dispatchSnapshot();
     }
 
@@ -428,10 +672,46 @@ export class LanMatchSession {
             this.reconnectDeadlineByPeerId.delete(peerId);
             changed = true;
         });
+        if (this.localReconnectDeadline && now >= this.localReconnectDeadline) {
+            // Local grace exhausted while still down — keep trying WS reconnect, but UI bar is at 0.
+            this.localReconnectDeadline = now;
+        }
         if (changed) {
             this.refreshLocalControlTurns();
+        }
+        // Keep UI progress bars ticking every second while anyone is in grace.
+        if (changed || this.reconnectDeadlineByPeerId.size > 0 || this.isLocalReconnecting()) {
             this.dispatchSnapshot();
         }
+    }
+
+    private performTurnResync(): void {
+        this.resendPendingLocalTurns();
+        const localPeerId = this.transport.getSelf().id;
+        if (!localPeerId) {
+            return;
+        }
+        try {
+            this.transport.broadcastAppMessage({
+                type: 'lan-game-turn-resync',
+                gameId: this.descriptor.gameId,
+                fromPeerId: localPeerId,
+            } satisfies LanGameTurnResyncMessage);
+        } catch {
+            // ignore while socket is still settling
+        }
+    }
+
+    private isLocalReconnecting(): boolean {
+        return (this.transport as { getConnectionStatus?: () => string }).getConnectionStatus?.() === 'reconnecting';
+    }
+
+    private getReconnectRemainPercent(peerId: string, now: number): number {
+        const deadline = this.reconnectDeadlineByPeerId.get(peerId);
+        if (deadline === undefined) {
+            return 100;
+        }
+        return Math.max(0, Math.min(100, Math.round(((deadline - now) / MATCH_RECONNECT_GRACE_MS) * 100)));
     }
 
     private handleAppMessage(entry: LanMeshAppMessage, _source: unknown): void {
@@ -440,11 +720,34 @@ export class LanMatchSession {
             return;
         }
 
-        const message = payload as LanGameTurnMessage | LanGameLoadProgressMessage;
+        const message = payload as
+            | LanGameTurnMessage
+            | LanGameLoadProgressMessage
+            | LanGameForceDropMessage
+            | LanGameTurnResyncMessage;
         if (message.gameId !== this.descriptor.gameId) {
             return;
         }
         if (message.fromPeerId !== entry.from.id || !this.assignmentByPeerId.has(message.fromPeerId)) {
+            return;
+        }
+
+        if (message.type === 'lan-game-turn-resync') {
+            this.resendPendingLocalTurns();
+            return;
+        }
+
+        if (message.type === 'lan-game-force-drop') {
+            // Only the lockstep control peer may force-end reconnect wait.
+            if (message.fromPeerId !== this.getControlPeerId()) {
+                return;
+            }
+            const targets = (message.targetPeerIds ?? []).filter(
+                (peerId) => peerId !== this.transport.getSelf().id && this.activePeerIds.has(peerId)
+            );
+            if (targets.length) {
+                this.applyForceDrop(targets);
+            }
             return;
         }
 
@@ -501,6 +804,27 @@ export class LanMatchSession {
         tickBatches.set(batch.peerId, cloneBatch(batch));
         this.suspectedDropPeerIds.delete(batch.peerId);
         this.reconnectDeadlineByPeerId.delete(batch.peerId);
+        this.dispatchSnapshot();
+    }
+
+    private applyForceDrop(peerIds: string[]): void {
+        let changed = false;
+        peerIds.forEach((peerId) => {
+            if (!this.activePeerIds.has(peerId)) {
+                return;
+            }
+            if (!this.suspectedDropPeerIds.has(peerId)) {
+                this.suspectedDropPeerIds.add(peerId);
+                changed = true;
+            }
+            if (this.reconnectDeadlineByPeerId.delete(peerId)) {
+                changed = true;
+            }
+        });
+        if (!changed) {
+            return;
+        }
+        this.refreshLocalControlTurns();
         this.dispatchSnapshot();
     }
 
@@ -582,15 +906,31 @@ export class LanMatchSession {
                 ])
         );
         const orderedActivePeerIds = this.getOrderedActivePeerIds();
+        const now = Date.now();
+        const waitingIds = new Set(this.reconnectDeadlineByPeerId.keys());
+        const localReconnecting = this.isLocalReconnecting();
+        const reconnectRemainPercentByPeerId: Record<string, number> = {};
+        this.orderedAssignments.forEach((assignment) => {
+            if (waitingIds.has(assignment.peerId)) {
+                reconnectRemainPercentByPeerId[assignment.peerId] = this.getReconnectRemainPercent(assignment.peerId, now);
+            } else if (localReconnecting && assignment.peerId === this.transport.getSelf().id && this.localReconnectDeadline) {
+                reconnectRemainPercentByPeerId[assignment.peerId] = Math.max(
+                    0,
+                    Math.min(100, Math.round(((this.localReconnectDeadline - now) / MATCH_RECONNECT_GRACE_MS) * 100))
+                );
+            } else {
+                reconnectRemainPercentByPeerId[assignment.peerId] = 100;
+            }
+        });
         return {
             gameId: this.descriptor.gameId,
             localPeerId: this.transport.getSelf().id,
             controlPeerId: this.getControlPeerId(),
             activePeerIds: orderedActivePeerIds,
             suspectedDropPeerIds: this.getSortedPeerIds(this.suspectedDropPeerIds),
-            waitingReconnectPeerIds: this.getSortedPeerIds(new Set(this.reconnectDeadlineByPeerId.keys())),
-            localReconnecting:
-                (this.transport as { getConnectionStatus?: () => string }).getConnectionStatus?.() === 'reconnecting',
+            waitingReconnectPeerIds: this.getSortedPeerIds(waitingIds),
+            reconnectRemainPercentByPeerId,
+            localReconnecting,
             bufferedTicks: Array.from(this.turnBatchesByTick.keys()).sort((left, right) => left - right),
             batchPeerIdsByTick,
             pendingLocalTicks: Array.from(this.localTurnIdByTick.keys()).sort((left, right) => left - right),

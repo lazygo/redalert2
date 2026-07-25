@@ -409,9 +409,10 @@
     "GUI:NetPlayDisconnectedTag": "掉线",
     "GUI:NetPlayForceLeaveHost": "房主已离开，房间已解散。",
     "GUI:NetPlayForceLeaveDisconnect": "与服务器断开连接，已自动离开房间。",
-    "GUI:NetPlayMatchWaitingPlayers": "网络等待",
-    "GUI:NetPlayMatchWaitingPlayersHint": "正在等待玩家重连：%s",
-    "GUI:NetPlayMatchReconnecting": "网络中断，正在重连…",
+    "GUI:NetPlayMatchWaitingPlayers": "等待网络",
+    "GUI:NetPlayMatchWaitingPlayersHint": "正在等待玩家：%s",
+    "GUI:NetPlayMatchReconnecting": "正在重新连接…",
     "GUI:NetPlayMatchReconnectHint": "请保持页面打开，正在尝试恢复对局连接。",
-    "GUI:NetPlayMatchResumeFailed": "无法恢复对局连接，即将退出。"
+    "GUI:NetPlayMatchResumeFailed": "无法恢复对局连接，即将退出。",
+    "GUI:NetPlayKick": "踢出"
 }

@@ -42,6 +42,7 @@ interface LoadingScreenWrapperProps {
     playerName?: string;
     mapName: string;
     gameResConfig: GameResConfig;
+    onKickPlayer?: (playerName: string) => void;
 }
 const countryBackgrounds = new Map<string, string>()
     .set("Americans", "ls800ustates.png")
@@ -91,42 +92,11 @@ export class LoadingScreenWrapper extends UiComponent<LoadingScreenWrapperProps>
         else {
             console.warn("Missing loading image for country " + countryName);
         }
-        try {
-            console.log('[LoadingScreenWrapper] createUiObject:', {
-                isCdn: gameResConfig.isCdn(),
-                countryName,
-                bgSpriteImg: this.bgSpriteImg,
-                bgSpritePal: this.bgSpritePal,
-                bgHtmlImg: this.bgHtmlImg,
-            });
-            if (!gameResConfig.isCdn() && Engine.vfs) {
-                const imgName = this.bgSpriteImg!;
-                const palName = this.bgSpritePal!;
-                const imgExists = Engine.vfs.fileExists(imgName);
-                const palExists = Engine.vfs.fileExists(palName);
-                console.log('[LoadingScreenWrapper] VFS existence:', { imgName, imgExists, palName, palExists });
-                try {
-                    (Engine.vfs as any).debugListFileOwners?.(imgName);
-                    (Engine.vfs as any).debugListFileOwners?.(palName);
-                    console.log('[LoadingScreenWrapper] VFS archives:', Engine.vfs.listArchives());
-                }
-                catch { }
-            }
-        }
-        catch { }
         return uiObject;
     }
     defineChildren(): any {
         const countries = this.props.rules.getMultiplayerCountries();
         const viewport = this.props.viewport;
-        try {
-            console.log('[LoadingScreenWrapper] defineChildren: willRenderSprite=', !this.props.gameResConfig.isCdn(), {
-                bgSpriteImg: this.bgSpriteImg,
-                bgSpritePal: this.bgSpritePal,
-                viewport,
-            });
-        }
-        catch { }
         return jsx("fragment", null, this.props.gameResConfig.isCdn()
             ? []
             : jsx("sprite", {
@@ -153,6 +123,7 @@ export class LoadingScreenWrapper extends UiComponent<LoadingScreenWrapperProps>
                 color: this.color,
                 playerInfos: this.props.playerInfos,
                 bgImageSrc: this.bgHtmlImg,
+                onKickPlayer: this.props.onKickPlayer,
             },
         }));
     }

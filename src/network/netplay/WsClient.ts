@@ -110,7 +110,7 @@ export class WsClient {
                     // ignore
                 }
             }
-        }, 20000);
+        }, 5000);
     }
 
     private stopHeartbeat(): void {

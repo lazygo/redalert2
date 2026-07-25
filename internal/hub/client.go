@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	writeWait      = 10 * time.Second
-	pingPeriod     = 10 * time.Second // detect dead lobby peers faster
+	writeWait      = 5 * time.Second
+	pingPeriod     = 3 * time.Second // fail dead peers quickly so match wait UI can start
 	sendWait       = 2 * time.Second
 	maxMessageSize = 8 << 20 // 8 MiB for map chunks
 	sendBufferSize = 1024    // lockstep turns must not drop under burst
