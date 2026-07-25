@@ -126,6 +126,21 @@ function ResponseCell({ ms, strings }: { ms?: number; strings: Strings }) {
         </div>
     );
 }
+function renderPingCell(
+    strings: Strings,
+    showResponse: boolean,
+    conInfo: ConInfo | undefined,
+    allowResponse: boolean
+) {
+    if (showResponse) {
+        return allowResponse ? <ResponseCell ms={getResponseMs(conInfo)} strings={strings}/> : null;
+    }
+    const ping = conInfo?.status === PlayerConnectionStatus.Connected
+        || conInfo?.status === PlayerConnectionStatus.Lagging
+        ? conInfo.ping
+        : undefined;
+    return ping !== undefined ? <PingIndicator ping={ping} strings={strings}/> : null;
+}
 export const DiploForm: React.FC<DiploFormProps> = ({
     strings,
     playerInfos,
@@ -165,21 +180,17 @@ export const DiploForm: React.FC<DiploFormProps> = ({
         </td>
     );
     const localConInfo = conInfos?.find((info) => info.name === localPlayer?.name);
-    // Classic WOL ping icons stay in the early column; LAN response uses responseMs after kills.
-    const localPlayerPing = localConInfo?.ping;
-    const localResponseMs = getResponseMs(localConInfo);
     return (<div className="diplo-form">
       <div className="players">
         <table>
           <thead>
             <tr>
               <th className="player-country"></th>
-              <th className="player-ping"></th>
+              <th className="player-ping">{showResponse ? strings.get("GUI:NetPlayResponse") : ""}</th>
               <th className="player-name">{strings.get("GUI:Player")}</th>
               <th>{strings.get("GUI:Allies")}</th>
               {!singlePlayer && <th>{strings.get("GUI:Chat")}</th>}
               <th>{strings.get("GUI:Kills")}</th>
-              {showResponse && <th className="player-response">{strings.get("GUI:NetPlayResponse")}</th>}
               {showKick && <th className="player-kick">{strings.get("GUI:NetPlayKick")}</th>}
             </tr>
           </thead>
@@ -191,7 +202,7 @@ export const DiploForm: React.FC<DiploFormProps> = ({
             }}>
                 {renderCountryCell(localPlayer)}
                 <td className="player-ping">
-                  {localPlayerPing !== undefined && (<PingIndicator ping={localPlayerPing} strings={strings}/>)}
+                  {renderPingCell(strings, showResponse, localConInfo, true)}
                 </td>
                 <td className="player-name">{localPlayer.name}</td>
                 <td></td>
@@ -201,20 +212,10 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                 ? localPlayer.getUnitsKilled()
                 : undefined}
                 </td>
-                {showResponse && (
-                  <td className="player-response">
-                    <ResponseCell ms={localResponseMs} strings={strings}/>
-                  </td>
-                )}
                 {showKick && <td className="player-kick"></td>}
               </tr>)}
             {playerInfos.map((playerInfo, index) => {
             const conInfo = conInfos?.find((info) => info.name === playerInfo.player.name);
-            const ping = conInfo?.status === PlayerConnectionStatus.Connected
-                || conInfo?.status === PlayerConnectionStatus.Lagging
-                ? conInfo.ping
-                : undefined;
-            const responseMs = getResponseMs(conInfo);
             const canKickThis = showKick
                 && !playerInfo.player.isAi
                 && playerInfo.player.name !== localPlayer?.name;
@@ -226,7 +227,7 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                 }}>
                   {renderCountryCell(playerInfo.player)}
                   <td className="player-ping">
-                    {ping !== undefined && (<PingIndicator ping={ping} strings={strings}/>)}
+                    {renderPingCell(strings, showResponse, conInfo, !playerInfo.player.isAi)}
                   </td>
                   <td className="player-name">
                     {playerInfo.player.isAi
@@ -252,13 +253,6 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                     ? playerInfo.player.getUnitsKilled()
                     : undefined}
                   </td>
-                  {showResponse && (
-                    <td className="player-response">
-                      {!playerInfo.player.isAi && (
-                        <ResponseCell ms={responseMs} strings={strings}/>
-                      )}
-                    </td>
-                  )}
                   {showKick && (
                     <td className="player-kick">
                       {canKickThis && (
