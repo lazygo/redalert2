@@ -1,6 +1,7 @@
 import { VirtualFile } from '@/data/vfs/VirtualFile';
 import { MapDigest } from '@/engine/MapDigest';
 import { GameOpts } from '@/game/gameopts/GameOpts';
+import { GameSpeed } from '@/game/GameSpeed';
 import { NO_TEAM_ID, OBS_COUNTRY_ID, RANDOM_COLOR_ID, RANDOM_COUNTRY_ID, RANDOM_START_POS } from '@/game/gameopts/constants';
 import { SlotInfo, SlotType as NetSlotType } from '@/network/gameopt/SlotInfo';
 import { LanPeerIdentity } from '@/network/lan/LanQrPayload';
@@ -425,6 +426,11 @@ export class LanRoomSession {
             throw new Error('当前房间还不能开始游戏。');
         }
         const self = this.meshSession.getSelf();
+        const gameOpts = cloneGameOpts(this.roomState.gameOpts);
+        if (this.launchKind === 'netplay') {
+            gameOpts.gameSpeed = GameSpeed.clampNetplaySpeed(gameOpts.gameSpeed);
+            this.roomState.gameOpts.gameSpeed = gameOpts.gameSpeed;
+        }
         const descriptor: LanLaunchDescriptor = {
             kind: this.launchKind,
             roomId: this.lastMeshSnapshot.roomId ?? '',
@@ -433,7 +439,7 @@ export class LanRoomSession {
             hostPeerId: this.roomState.hostPeerId,
             localPeerId: self.id,
             localPlayerName: self.name,
-            gameOpts: cloneGameOpts(this.roomState.gameOpts),
+            gameOpts,
             humanAssignments: this.roomState.humanAssignments.map((assignment) => ({ ...assignment })),
             mapTransferStateByPeerId: cloneMapTransferState(this.roomState.mapTransferStateByPeerId),
             returnRoute,
@@ -651,7 +657,11 @@ export class LanRoomSession {
             localPeerId: this.meshSession.getSelf().id,
             localPlayerName: this.meshSession.getSelf().name,
             returnRoute: message.descriptor.returnRoute,
+            gameOpts: cloneGameOpts(message.descriptor.gameOpts),
         };
+        if (descriptor.kind === 'netplay') {
+            descriptor.gameOpts.gameSpeed = GameSpeed.clampNetplaySpeed(descriptor.gameOpts.gameSpeed);
+        }
         this.launchDescriptor = descriptor;
         this.onLaunch.dispatch(this, descriptor);
         this.dispatchSnapshot();

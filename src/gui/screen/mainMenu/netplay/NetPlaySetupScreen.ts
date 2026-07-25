@@ -17,6 +17,7 @@ import { StorageKey } from '@/LocalPrefs';
 import { uint8ArrayToBase64String } from '@/util/string';
 import { SlotType as NetSlotType } from '@/network/gameopt/SlotInfo';
 import { OBS_COUNTRY_ID } from '@/game/gameopts/constants';
+import { GameSpeed } from '@/game/GameSpeed';
 
 interface RootController {
     goToScreen(screenType: number, params?: any): void;
@@ -270,6 +271,8 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         if (!this.pregameController.isInitialized()) {
             await this.pregameController.initialize();
         }
+        this.pregameController.clampGameSpeed(GameSpeed.NETPLAY_MAX_SPEED);
+        this.pregameController.ensureNetplayGameSpeed(GameSpeed.NETPLAY_DEFAULT_SPEED);
         this.pregameController.updateSelfName(this.transport.getSelf().name);
         await this.controller.pushScreen(MainMenuScreenType.MapSelection, {
             lobbyType: LobbyType.MultiplayerHost,
@@ -370,6 +373,9 @@ export class NetPlaySetupScreen extends MainMenuScreen {
 
     private async startNetGame(): Promise<void> {
         try {
+            this.pregameController.clampGameSpeed(GameSpeed.NETPLAY_MAX_SPEED);
+            this.pregameController.ensureNetplayGameSpeed(GameSpeed.NETPLAY_DEFAULT_SPEED);
+            this.roomSession.applyHostPregameSnapshot(this.pregameController.getSnapshot());
             this.roomSession.startGame({
                 screenType: MainMenuScreenType.NetPlaySetup,
                 params: {},

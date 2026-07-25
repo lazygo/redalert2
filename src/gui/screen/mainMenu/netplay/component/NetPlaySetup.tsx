@@ -8,6 +8,7 @@ import { NetRoomSession } from '@/network/netplay/NetRoomSession';
 import { WsRoomTransport } from '@/network/netplay/WsRoomTransport';
 import { NetPlayRoomInfo } from '@/network/netplay/NetPlayProtocol';
 import { LanRoomSnapshot } from '@/network/lan/LanRoomSession';
+import { GameSpeed } from '@/game/GameSpeed';
 
 export interface NetPlaySetupProps {
     strings: any;
@@ -93,6 +94,10 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
                 slotsInfo: roomSnapshot.roomState.slotsInfo,
                 currentMapFile: roomSession.getResolvedCustomMapFile(),
             });
+            if (roomSnapshot.isHost) {
+                pregameController.clampGameSpeed(GameSpeed.NETPLAY_MAX_SPEED);
+                pregameController.ensureNetplayGameSpeed(GameSpeed.NETPLAY_DEFAULT_SPEED);
+            }
         }
         const selfAssignment = roomSnapshot.roomState.humanAssignments.find(
             (assignment) => assignment.peerId === roomSnapshot.self.id
@@ -103,6 +108,7 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
             localUsername: roomSnapshot.self.name,
             chatHistory: chatHistory as any,
             onStateChange: roomSnapshot.isHost ? onHostPregameChanged : undefined,
+            maxGameSpeed: GameSpeed.NETPLAY_MAX_SPEED,
         });
         if (!roomSnapshot.isHost && selfAssignment) {
             const requestOwnSlotConfig = (updater: (slot: any) => {

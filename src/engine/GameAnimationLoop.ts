@@ -169,6 +169,14 @@ export class GameAnimationLoop {
             this.lastGameFrame = 0;
             this.startTime = timestamp;
         }
+        // While blocked on lockstep peers, don't burn wall-clock turn slots.
+        // Only retry once per RAF until the turn resolves.
+        if (this.turnMgrIsWaiting) {
+            if (!this.startTime) {
+                this.startTime = timestamp;
+            }
+            return 1;
+        }
         let deltaFrames = 0;
         if (this.startTime) {
             const elapsed = timestamp - this.startTime;

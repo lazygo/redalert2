@@ -7,10 +7,24 @@ import { Serializer } from '@/network/gameopt/Serializer';
 import { LanMatchSession, LanResolvedTurn } from '@/network/lan/LanMatchSession';
 import { EventDispatcher } from '@/util/event';
 
+/**
+ * Classic RTS lockstep: execute tick T while already having submitted T+lookahead.
+ * Without lookahead, every tick waits a full relay RTT and the sim crawls.
+ */
+export function getLockstepLookaheadTurns(kind: 'lan' | 'netplay' | undefined): number {
+    // ~133ms buffer at 60 turn/s; covers typical 50–150ms WebSocket relay RTT.
+    if (kind === 'netplay') {
+        return 8;
+    }
+    // LAN/WebRTC is usually low latency; a small buffer still smooths jitter.
+    return 3;
+}
+
 export class LanLockstepTurnManager {
     private readonly serializer = new Serializer();
     private readonly parser = new Parser();
     private readonly submittedTicks = new Set<number>();
+    private readonly lookaheadTurns: number;
     private gameTurnMillis = 1000 / GameSpeed.BASE_TICKS_PER_SECOND;
     private errorState = false;
     private passiveMode = false;
@@ -29,12 +43,19 @@ export class LanLockstepTurnManager {
         private readonly matchSession: LanMatchSession,
         private readonly actionLogger?: { debug(message: string): void },
         private readonly lockstepLogger?: { debug?(message: string): void; warn?(message: string): void },
-        private readonly replayRecorder?: { recordActions?(tick: number, actions: any[]): void }
-    ) { }
+        private readonly replayRecorder?: { recordActions?(tick: number, actions: any[]): void },
+        lookaheadTurns?: number
+    ) {
+        this.lookaheadTurns = Math.max(0, Math.floor(lookaheadTurns ?? 0));
+    }
 
     init(): void {
         this.computeGameTurn(this.game.speed.value);
         this.matchSession.onActionsReceived.subscribe(this.handleActionsReceived);
+        // Seed empty future turns so tick 0 can resolve immediately once peers seed too.
+        for (let tick = 0; tick < this.lookaheadTurns; tick++) {
+            this.submitNoActionTurn(tick);
+        }
     }
 
     getTurnMillis(): number {
@@ -60,7 +81,9 @@ export class LanLockstepTurnManager {
 
         const tick = this.game.currentTick;
         if (this.game.status !== GameStatus.Ended) {
-            const localTurnId = this.submitLocalTurn(tick);
+            // Submit lookahead ahead of execution so peers can keep the sim fed.
+            const submitTick = tick + this.lookaheadTurns;
+            const localTurnId = this.submitLocalTurn(submitTick);
             if (localTurnId) {
                 this.onActionsSent.dispatch(this, localTurnId);
             }
@@ -77,11 +100,14 @@ export class LanLockstepTurnManager {
                 this.replayRecorder?.recordActions?.(tick, processedActions);
             }
             if (tick > 0 && tick % 300 === 0) {
-                this.lockstepLogger?.debug?.(`[lan] tick=${tick} hash=${this.game.getHash()} peers=${resolvedTurn.batches.map((batch) => batch.peerId).join(',')}`);
+                this.lockstepLogger?.debug?.(
+                    `[lan] tick=${tick} hash=${this.game.getHash()} peers=${resolvedTurn.batches.map((batch) => batch.peerId).join(',')} lookahead=${this.lookaheadTurns}`
+                );
             }
         }
 
         this.game.update();
+        this.pruneSubmittedTicks(tick);
         return true;
     }
 
@@ -117,6 +143,30 @@ export class LanLockstepTurnManager {
 
         this.submittedTicks.add(tick);
         return this.matchSession.submitLocalTurn(tick, actionData);
+    }
+
+    private submitNoActionTurn(tick: number): void {
+        if (this.submittedTicks.has(tick)) {
+            return;
+        }
+        const actionData = this.serializer.serializePlayerActions([{
+            id: ActionType.NoAction,
+            params: new Uint8Array(),
+        }]);
+        this.submittedTicks.add(tick);
+        this.matchSession.submitLocalTurn(tick, actionData);
+    }
+
+    private pruneSubmittedTicks(currentTick: number): void {
+        if (this.submittedTicks.size < 64) {
+            return;
+        }
+        const keepAfter = currentTick - 32;
+        for (const tick of this.submittedTicks) {
+            if (tick < keepAfter) {
+                this.submittedTicks.delete(tick);
+            }
+        }
     }
 
     private processResolvedTurn(tick: number, resolvedTurn: LanResolvedTurn): any[] {

@@ -60,6 +60,8 @@ interface LobbyFormProps {
     onChangeGameSpeed: (value: number) => void;
     onChangeCredits: (value: number) => void;
     onChangeUnitCount: (value: number) => void;
+    /** Cap for game-speed slider (netplay uses a lower max for lockstep RTT). */
+    maxGameSpeed?: number;
     onToggleBuildOffAlly: (checked: boolean) => void;
     onSendMessage?: (message: string) => void;
     onCountrySelect: (country: any, slotIndex: number) => void;
@@ -198,7 +200,7 @@ export class LobbyForm extends React.Component<LobbyFormProps> {
           <div className={"game-options-right" + (isHost ? "" : " all-disabled")}>
             <div className="slider-item">
               <span className="label">{strings.get("GUI:GameSpeed")}</span>
-              <Slider name="gameSpeed" min={0} max={6} value={"" + props.gameSpeed} disabled={!isHost} data-r-tooltip={strings.get("STT:HostSliderSpeed")} onChange={(e) => this.props.onChangeGameSpeed(Number(e.target.value))}/>
+              <Slider name="gameSpeed" min={0} max={props.maxGameSpeed ?? 6} value={"" + props.gameSpeed} disabled={!isHost} data-r-tooltip={strings.get("STT:HostSliderSpeed")} onChange={(e) => this.props.onChangeGameSpeed(Number(e.target.value))}/>
             </div>
             <div className="slider-item">
               <span className="label">{strings.get("GUI:Credits")}</span>
