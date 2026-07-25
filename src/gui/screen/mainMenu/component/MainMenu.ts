@@ -165,8 +165,26 @@ export class MainMenu extends UiObject {
     isSidebarCollapsed(): boolean {
         return this.sidebarCollapsed;
     }
-    showButtons(): void {
+    showButtons(animate: boolean = true): void {
+        // Already expanded: refresh labels only — don't replay slide-in (zoom/rerender).
+        if (!this.sidebarCollapsed && animate) {
+            const animating = this.sidebarSlots.some((slot) => !slot.getAnimationRunner().isStopped())
+                || !this.sidebarMpSlot.getAnimationRunner().isStopped();
+            if (!animating) {
+                this.updateSidebarButtons();
+                return;
+            }
+            this.sidebarNeedsRefresh = true;
+            return;
+        }
         this.sidebarCollapsed = false;
+        if (!animate) {
+            this.sidebarMpSlot.getAnimationRunner().snapExpanded();
+            this.sidebarSlots.forEach((slot) => slot.getAnimationRunner().snapExpanded());
+            this.updateSidebarButtons();
+            this.sidebarNeedsRefresh = false;
+            return;
+        }
         this.sidebarNeedsRefresh = true;
         this.sidebarMpSlot.getAnimationRunner().slideIn();
         this.sidebarSlots.forEach((slot) => {
@@ -174,8 +192,26 @@ export class MainMenu extends UiObject {
             animRunner.slideIn();
         });
     }
-    hideButtons(): void {
+    hideButtons(animate: boolean = true): void {
+        // Already collapsed: don't replay slide-out.
+        if (this.sidebarCollapsed && animate) {
+            const animating = this.sidebarSlots.some((slot) => !slot.getAnimationRunner().isStopped())
+                || !this.sidebarMpSlot.getAnimationRunner().isStopped();
+            if (!animating) {
+                this.updateSidebarButtons();
+                return;
+            }
+            this.sidebarNeedsRefresh = true;
+            return;
+        }
         this.sidebarCollapsed = true;
+        if (!animate) {
+            this.sidebarMpSlot.getAnimationRunner().snapCollapsed();
+            this.sidebarSlots.forEach((slot) => slot.getAnimationRunner().snapCollapsed());
+            this.updateSidebarButtons();
+            this.sidebarNeedsRefresh = false;
+            return;
+        }
         this.updateSidebarButtons();
         this.sidebarNeedsRefresh = true;
         this.sidebarMpSlot.getAnimationRunner().slideOut();
@@ -457,10 +493,13 @@ export class MainMenu extends UiObject {
         });
     }
     private resolveSidebarButtonState(buttonConfig?: ButtonConfig): MenuButtonState {
-        if (buttonConfig?.disabled) {
+        if (!buttonConfig) {
             return MenuButtonState.Unlit;
         }
-        if (buttonConfig?.blink && this.sidebarBlinkPhase) {
+        if (buttonConfig.disabled) {
+            return MenuButtonState.Unlit;
+        }
+        if (buttonConfig.blink && this.sidebarBlinkPhase) {
             return MenuButtonState.Active;
         }
         return MenuButtonState.Normal;

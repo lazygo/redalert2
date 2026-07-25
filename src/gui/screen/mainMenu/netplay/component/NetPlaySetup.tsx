@@ -202,7 +202,7 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
                         />
                     </div>
 
-                    <div className="lan-panel lan-entry-panel">
+                    <div className="lan-panel lan-entry-panel lan-entry-recent-panel">
                         <div className="lan-panel-header">
                             <h3>{strings.get('GUI:NetPlayRoomList') || '公开房间'}</h3>
                             <span>

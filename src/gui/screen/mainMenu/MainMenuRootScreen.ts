@@ -93,15 +93,25 @@ export class MainMenuRootScreen extends RootScreen {
         });
         return this.mainMenuCtrl;
     }
+    private viewportRerenderTimer?: ReturnType<typeof setTimeout>;
+
     onViewportChange(): void {
         console.log('[MainMenuRootScreen] Viewport changed');
         console.log('[MainMenuRootScreen] New menuViewport:', this.uiScene.menuViewport);
         if (this.mainMenu) {
             this.mainMenu.setViewport(this.uiScene.menuViewport);
         }
-        if (this.mainMenuCtrl) {
-            this.mainMenuCtrl.rerenderCurrentScreen(true);
+        // Browser zoom / pinch fires many visualViewport resize events; debouncing
+        // avoids a long leave→enter→slideIn flicker chain on the sidebar.
+        if (this.viewportRerenderTimer !== undefined) {
+            clearTimeout(this.viewportRerenderTimer);
         }
+        this.viewportRerenderTimer = setTimeout(() => {
+            this.viewportRerenderTimer = undefined;
+            if (this.mainMenuCtrl) {
+                this.mainMenuCtrl.rerenderCurrentScreen(true);
+            }
+        }, 200);
     }
     async onEnter(params?: any): Promise<void> {
         console.log('[MainMenuRootScreen] Entering main menu root screen');
@@ -276,6 +286,10 @@ export class MainMenuRootScreen extends RootScreen {
     }
     async onLeave(): Promise<void> {
         console.log('[MainMenuRootScreen] Leaving main menu root screen');
+        if (this.viewportRerenderTimer !== undefined) {
+            clearTimeout(this.viewportRerenderTimer);
+            this.viewportRerenderTimer = undefined;
+        }
         if (this.mainMenuCtrl) {
             this.mainMenuCtrl.toggleMainVideo(false);
             await this.mainMenuCtrl.leaveCurrentScreen();
