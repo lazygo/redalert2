@@ -41,10 +41,10 @@ const sideAssets = new Map<SideType, {
 export class ScoreScreen extends MainMenuScreen {
     private strings: any;
     private jsxRenderer: any;
-    private wolService: WolService;
+    private wolService?: WolService;
     private scoreTable?: any;
     private reportUpdateTask?: Task<void>;
-    constructor(strings: any, jsxRenderer: any, wolService: WolService) {
+    constructor(strings: any, jsxRenderer: any, wolService?: WolService) {
         super();
         this.strings = strings;
         this.jsxRenderer = jsxRenderer;
@@ -57,7 +57,8 @@ export class ScoreScreen extends MainMenuScreen {
             : this.strings.get("GUI:MultiplayerScore");
         this.controller.toggleMainVideo(false);
         this.initView(params);
-        if (!params.singlePlayer) {
+        // WOL online matchmaking only; LAN/netplay/skirmish have no game-report service.
+        if (!params.singlePlayer && this.wolService) {
             this.loadGameReport(params.game);
         }
     }
@@ -94,12 +95,16 @@ export class ScoreScreen extends MainMenuScreen {
         this.controller.setMainComponent(component);
     }
     private loadGameReport(game: Game): void {
+        const wolService = this.wolService;
+        if (!wolService) {
+            return;
+        }
         this.reportUpdateTask?.cancel();
         const task = (this.reportUpdateTask = new Task(async (cancellationToken) => {
             while (true) {
                 if (cancellationToken.isCancelled())
                     return;
-                const report = this.wolService.getLastGameReport();
+                const report = wolService.getLastGameReport();
                 if (report?.gameId === game.id) {
                     this.scoreTable.applyOptions((options: any) => {
                         options.gameReport = report;
