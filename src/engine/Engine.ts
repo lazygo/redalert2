@@ -290,11 +290,16 @@ export class Engine {
             throw new Error("No gameResSource is set");
         }
         const currentEngine = this.getActiveEngine();
+        // A: drop previous theater packs/caches before mounting a different one.
+        if (this.activeTheater && this.activeTheater.type !== theaterType) {
+            this.unloadTheater(this.activeTheater.type);
+        }
         let theaterInstance: Theater | undefined;
         const settings = this.getTheaterSettings(currentEngine, theaterType);
         if (this.gameResSource !== GameResSource.Cdn && this.vfs) {
             for (const mixName of settings.mixes) {
-                await this.vfs.addMixFile(mixName);
+                // B pilot: theater mixes use LazyMixFile (index + File + entry LRU).
+                await this.vfs.addMixFile(mixName, { lazy: true });
             }
         }
         if (this.theaters.has(theaterType)) {
@@ -310,11 +315,64 @@ export class Engine {
         return theaterInstance;
     }
     static unloadTheater(theaterType: TheaterType): void {
+        const currentEngine = this.getActiveEngine();
+        let settings: TheaterSettings | undefined;
+        try {
+            settings = this.getTheaterSettings(currentEngine, theaterType);
+        }
+        catch (error) {
+            console.warn('[Engine.unloadTheater] unknown theater', TheaterType[theaterType], error);
+            return;
+        }
         if (this.vfs) {
-            const currentEngine = this.getActiveEngine();
-            const settings = this.getTheaterSettings(currentEngine, theaterType);
             for (const mixName of settings.mixes) {
                 this.vfs.removeArchive(mixName);
+            }
+        }
+        // A: release decoded theater assets that would otherwise pin RAM after archive removal.
+        const ext = settings.extension.toLowerCase();
+        const clearedTiles = this.tileData.clearMatching((key) =>
+            key.toLowerCase().endsWith(ext),
+        );
+        const clearedImages = this.images.clearMatching((key) => key.toLowerCase().endsWith(ext));
+        for (const paletteName of [
+            settings.isoPaletteName,
+            settings.unitPaletteName,
+            settings.overlayPaletteName,
+            settings.libPaletteName,
+        ]) {
+            this.palettes.clear(paletteName);
+        }
+        this.theaters.delete(theaterType);
+        if (this.activeTheater?.type === theaterType) {
+            this.activeTheater = undefined;
+        }
+        console.info(
+            `[Engine.unloadTheater] ${TheaterType[theaterType]} ` +
+            `cleared tiles=${clearedTiles} images=${clearedImages} mixes=${settings.mixes.join(',')}`,
+        );
+    }
+    /**
+     * B pilot: after initial theater assets are decoded, drop LazyMixFile full buffers
+     * so only the entry LRU + File handle remain.
+     */
+    static releaseTheaterMixBackingBuffers(theaterType?: TheaterType): void {
+        const type = theaterType ?? this.activeTheater?.type;
+        if (type === undefined || !this.vfs) {
+            return;
+        }
+        let settings: TheaterSettings;
+        try {
+            settings = this.getTheaterSettings(this.getActiveEngine(), type);
+        }
+        catch {
+            return;
+        }
+        for (const mixName of settings.mixes) {
+            const archive = this.vfs.getArchive(mixName) as { releaseFullBuffer?: () => void; getStats?: () => unknown } | undefined;
+            archive?.releaseFullBuffer?.();
+            if (archive?.getStats) {
+                console.info('[Engine.releaseTheaterMixBackingBuffers]', archive.getStats());
             }
         }
     }

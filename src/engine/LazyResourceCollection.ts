@@ -66,4 +66,18 @@ export class LazyResourceCollection<T> {
     clearAll(): void {
         this.resources.clear();
     }
+    /** Drop decoded entries whose keys match the predicate (e.g. theater extension). */
+    clearMatching(predicate: (key: string) => boolean): number {
+        let removed = 0;
+        for (const key of [...this.resources.keys()]) {
+            if (predicate(key)) {
+                this.resources.delete(key);
+                removed++;
+            }
+        }
+        return removed;
+    }
+    size(): number {
+        return this.resources.size;
+    }
 }

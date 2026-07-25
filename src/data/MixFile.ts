@@ -98,4 +98,14 @@ export class MixFile {
         }
         return VirtualFile.factory(this.stream, filename, this.dataStart + entry.offset, entry.length);
     }
+    /** Snapshot for LazyMixFile / tooling — index maps filename hash → entry. */
+    public getIndexEntries(): ReadonlyMap<number, MixEntry> {
+        return this.index;
+    }
+    public getDataStart(): number {
+        return this.dataStart;
+    }
+    public getByteLength(): number {
+        return this.stream.byteLength;
+    }
 }

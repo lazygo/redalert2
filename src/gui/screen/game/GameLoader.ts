@@ -227,6 +227,8 @@ export class GameLoader {
         const theaterIni = Engine.getTheaterIni(activeEngine, mapFile.theaterType);
         const tileSets = new TileSets(theaterIni);
         tileSets.loadTileData(Engine.getTileData(), theaterSettings.extension);
+        // B: tiles/palettes already decoded — drop theater mix full ArrayBuffers.
+        Engine.releaseTheaterMixBackingBuffers(mapFile.theaterType);
         const game = GameFactory.create(mapFile, tileSets, Engine.getRules(), Engine.getArt(), Engine.getAi(), rulesIni, mixinRulesInis, gameId, timestamp, gameOptions, this.gameModes, isSinglePlayer, botsLib, this.iniLogger, this.speedCheat, this.debugBotIndex, this.actionLogger);
         return { game, theater };
     }
