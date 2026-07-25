@@ -3,6 +3,7 @@ import { AllianceStatus } from '@/game/Alliances';
 import { OBS_COUNTRY_NAME, aiUiNames } from '@/game/gameopts/constants';
 import { CountryIcon } from '@/gui/component/CountryIcon';
 import { Chat } from '@/gui/component/Chat';
+import { Image } from '@/gui/component/Image';
 import { RECIPIENT_ALL, RECIPIENT_TEAM } from '@/network/gservConfig';
 import { PingIndicator } from '@/gui/component/PingIndicator';
 interface Color {
@@ -81,6 +82,7 @@ interface DiploFormProps {
     chatHistory?: ChatHistory;
     conInfos?: ConInfo[];
     canKickPlayers?: boolean;
+    hostPlayerName?: string;
     onToggleTaunts: (enabled: boolean) => void;
     onToggleAlliance: (player: Player, enabled: boolean) => void;
     onToggleChat: (player: Player, enabled: boolean) => void;
@@ -138,6 +140,7 @@ export const DiploForm: React.FC<DiploFormProps> = ({
     chatHistory,
     conInfos,
     canKickPlayers,
+    hostPlayerName,
     onToggleTaunts,
     onToggleAlliance,
     onToggleChat,
@@ -150,6 +153,17 @@ export const DiploForm: React.FC<DiploFormProps> = ({
     const showResponse = !singlePlayer && conInfos !== undefined;
     const showKick = Boolean(canKickPlayers && onKickPlayer);
     const kickLabel = strings.get("GUI:NetPlayKick") || "Kick";
+    const hostTooltip = strings.get("GUI:NetPlayHostTag") || strings.get("STT:HostPictureAcceptance");
+    const renderCountryCell = (player: Player) => (
+        <td className="player-country">
+            <div className="player-country-cell">
+                <span className="player-host-status" data-r-tooltip={hostPlayerName === player.name ? hostTooltip : undefined} title={hostPlayerName === player.name ? hostTooltip : undefined}>
+                    {hostPlayerName === player.name ? <Image src="wolhost.pcx"/> : null}
+                </span>
+                <CountryIcon country={player.country ? player.country.name : OBS_COUNTRY_NAME}/>
+            </div>
+        </td>
+    );
     const localConInfo = conInfos?.find((info) => info.name === localPlayer?.name);
     // Classic WOL ping icons stay in the early column; LAN response uses responseMs after kills.
     const localPlayerPing = localConInfo?.ping;
@@ -175,11 +189,7 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                     ? "grey"
                     : localPlayer.color.asHexString(),
             }}>
-                <td className="player-country">
-                  <CountryIcon country={localPlayer.country
-                ? localPlayer.country.name
-                : OBS_COUNTRY_NAME}/>
-                </td>
+                {renderCountryCell(localPlayer)}
                 <td className="player-ping">
                   {localPlayerPing !== undefined && (<PingIndicator ping={localPlayerPing} strings={strings}/>)}
                 </td>
@@ -214,11 +224,7 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                         : playerInfo.player.color.asHexString(),
                     opacity: conInfo && conInfo.status === PlayerConnectionStatus.Disconnected ? 0.55 : 1,
                 }}>
-                  <td className="player-country">
-                    <CountryIcon country={playerInfo.player.country
-                    ? playerInfo.player.country.name
-                    : OBS_COUNTRY_NAME}/>
-                  </td>
+                  {renderCountryCell(playerInfo.player)}
                   <td className="player-ping">
                     {ping !== undefined && (<PingIndicator ping={ping} strings={strings}/>)}
                   </td>
