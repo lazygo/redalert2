@@ -115,6 +115,7 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         void this.refreshSidebarPreview();
         this.controller.showSidebarButtons();
         this.startRoomsPoll();
+        void this.ensureConnected();
     }
 
     async onLeave(): Promise<void> {
@@ -123,6 +124,7 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         this.roomSession.onSnapshotChange.unsubscribe(this.handleRoomSnapshot);
         this.roomSession.onLaunch.unsubscribe(this.handleLaunch);
         this.transport.onRoomsChange.unsubscribe(this.handleRoomsChange);
+        this.transport.onConnectionChange.unsubscribe(this.handleConnectionChange);
         await this.controller.hideSidebarButtons();
         this.form = undefined;
     }
@@ -153,6 +155,7 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         this.refreshView();
         this.controller.showSidebarButtons();
         this.startRoomsPoll();
+        void this.ensureConnected();
     }
 
     private handleRoomSnapshot = () => {
@@ -163,6 +166,11 @@ export class NetPlaySetupScreen extends MainMenuScreen {
     };
 
     private handleRoomsChange = () => {
+        this.refreshView();
+    };
+
+    private handleConnectionChange = () => {
+        this.refreshSidebarButtons();
         this.refreshView();
     };
 
@@ -184,9 +192,11 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         this.roomSession.onSnapshotChange.unsubscribe(this.handleRoomSnapshot);
         this.roomSession.onLaunch.unsubscribe(this.handleLaunch);
         this.transport.onRoomsChange.unsubscribe(this.handleRoomsChange);
+        this.transport.onConnectionChange.unsubscribe(this.handleConnectionChange);
         this.roomSession.onSnapshotChange.subscribe(this.handleRoomSnapshot);
         this.roomSession.onLaunch.subscribe(this.handleLaunch);
         this.transport.onRoomsChange.subscribe(this.handleRoomsChange);
+        this.transport.onConnectionChange.subscribe(this.handleConnectionChange);
     }
 
     private createPregameController(): PregameController {
@@ -242,6 +252,19 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 void this.refreshSidebarPreview();
             },
         };
+    }
+
+    private async ensureConnected(): Promise<void> {
+        if (!this.netplayWsUrl || this.transport.isConnected()) {
+            this.refreshSidebarButtons();
+            return;
+        }
+        try {
+            await this.connect();
+        } catch (error) {
+            this.refreshSidebarButtons();
+            this.messageBoxApi.show((error as Error).message);
+        }
     }
 
     private async connect(): Promise<void> {
@@ -391,13 +414,6 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         const buttons: any[] = [];
 
         if (!roomSnapshot.isRoomActive) {
-            buttons.push({
-                label: this.strings.get('GUI:NetPlayConnect') || '连接服务器',
-                disabled: !this.netplayWsUrl || this.transport.isConnected(),
-                onClick: () => {
-                    void this.connect().catch((error) => this.messageBoxApi.show((error as Error).message));
-                },
-            });
             buttons.push({
                 label: this.strings.get('GUI:NetPlayCreateRoom') || '创建房间',
                 disabled: !this.netplayWsUrl || !this.transport.isConnected(),
