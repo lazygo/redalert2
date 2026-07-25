@@ -172,7 +172,8 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 this.messageBoxApi.show(
                     this.pendingForceLeaveMessage
                     || this.strings.get('GUI:NetPlayForceLeaveHost')
-                    || '房主已离开，房间已解散。'
+                    || '房主已离开，房间已解散。',
+                    this.strings.get('GUI:Ok') || '确定'
                 );
             }
             this.pendingForceLeaveMessage = undefined;
@@ -296,7 +297,10 @@ export class NetPlaySetupScreen extends MainMenuScreen {
             await this.connect();
         } catch (error) {
             this.refreshSidebarButtons();
-            this.messageBoxApi.show((error as Error).message);
+            this.messageBoxApi.show(
+                (error as Error).message,
+                this.strings.get('GUI:Ok') || '确定'
+            );
         }
     }
 
@@ -426,7 +430,8 @@ export class NetPlaySetupScreen extends MainMenuScreen {
             }
             if (!roomSnapshot.canStart) {
                 this.messageBoxApi.show(
-                    this.strings.get('GUI:NetPlayNeedReady') || '需要所有玩家准备后才能开始游戏。'
+                    this.strings.get('GUI:NetPlayNeedReady') || '需要所有玩家准备后才能开始游戏。',
+                    this.strings.get('GUI:Ok') || '确定'
                 );
                 return;
             }
@@ -439,7 +444,10 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 params: {},
             });
         } catch (error) {
-            this.messageBoxApi.show((error as Error).message);
+            this.messageBoxApi.show(
+                (error as Error).message,
+                this.strings.get('GUI:Ok') || '确定'
+            );
         }
     }
 
@@ -453,7 +461,10 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 disabled: !this.netplayWsUrl || !this.transport.isConnected(),
                 onClick: () => {
                     void this.beginCreateRoom(`${this.transport.getSelf().name}'s room`)
-                        .catch((error) => this.messageBoxApi.show((error as Error).message));
+                        .catch((error) => this.messageBoxApi.show(
+                            (error as Error).message,
+                            this.strings.get('GUI:Ok') || '确定'
+                        ));
                 },
             });
             buttons.push({
