@@ -412,5 +412,10 @@
     "GUI:NetPlayJoinTimeout": "Timed out joining room",
     "GUI:NetPlayNeedReady": "All players must be ready before starting",
     "GUI:NetPlayStartReadyHint": "All players ready — you can start",
-    "GUI:NetPlayOnlyHostStart": "Only the host can start the game"
+    "GUI:NetPlayOnlyHostStart": "Only the host can start the game",
+    "GUI:NetPlayHostTag": "Host",
+    "GUI:NetPlayNotReadyTag": "Not ready",
+    "GUI:NetPlayDisconnectedTag": "Disconnected",
+    "GUI:NetPlayForceLeaveHost": "The host left. The room has been closed.",
+    "GUI:NetPlayForceLeaveDisconnect": "Disconnected from the server. You have left the room."
 }

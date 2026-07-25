@@ -98,6 +98,18 @@ func (r *Room) Remove(peerID string) (empty bool, wasHost bool, nextHost string)
 	return len(r.members) == 0, wasHost, nextHost
 }
 
+// DrainMembers returns remaining clients and clears the room membership.
+func (r *Room) DrainMembers() []*Client {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]*Client, 0, len(r.members))
+	for _, c := range r.members {
+		out = append(out, c)
+	}
+	r.members = make(map[string]*Client)
+	return out
+}
+
 func (r *Room) Broadcast(exceptPeerID string, env protocol.Envelope) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

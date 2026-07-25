@@ -401,5 +401,10 @@
     "GUI:NetPlayJoinTimeout": "加入房间超时",
     "GUI:NetPlayNeedReady": "需要所有玩家准备后才能开始游戏",
     "GUI:NetPlayStartReadyHint": "所有玩家已准备，可以开始",
-    "GUI:NetPlayOnlyHostStart": "只有房主可以开始游戏"
+    "GUI:NetPlayOnlyHostStart": "只有房主可以开始游戏",
+    "GUI:NetPlayHostTag": "房主",
+    "GUI:NetPlayNotReadyTag": "未准备",
+    "GUI:NetPlayDisconnectedTag": "掉线",
+    "GUI:NetPlayForceLeaveHost": "房主已离开，房间已解散。",
+    "GUI:NetPlayForceLeaveDisconnect": "与服务器断开连接，已自动离开房间。"
 }

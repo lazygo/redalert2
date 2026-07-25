@@ -39,6 +39,12 @@ export class WsRoomTransport implements LanMatchTransport {
     constructor() {
         this.client.onMessage.subscribe((message) => this.handleServerMessage(message));
         this.client.onStatusChange.subscribe((status) => {
+            if (status !== 'connected' && this.roomId) {
+                this.roomId = undefined;
+                this.currentRoom = undefined;
+                this.members.clear();
+                this.log('warn', '与服务器断开连接，已自动离开房间');
+            }
             this.onConnectionChange.dispatch(this, status === 'connected');
             this.dispatchSnapshot();
         });
@@ -238,7 +244,13 @@ export class WsRoomTransport implements LanMatchTransport {
                 this.roomId = undefined;
                 this.currentRoom = undefined;
                 this.members.clear();
-                this.log('info', '已离开房间');
+                if (message.reason === 'host_disconnect' || message.reason === 'host_left') {
+                    this.log('warn', '房主已离开，房间已解散');
+                } else if (message.reason === 'disconnect') {
+                    this.log('warn', '连接中断，已离开房间');
+                } else {
+                    this.log('info', '已离开房间');
+                }
                 this.dispatchSnapshot();
                 return;
             case 'member-join':
@@ -254,6 +266,8 @@ export class WsRoomTransport implements LanMatchTransport {
             case 'member-leave':
                 if (message.member) {
                     this.members.delete(message.member.id);
+                    const reason = message.reason === 'disconnect' ? '断开连接' : '离开房间';
+                    this.log('warn', `${message.member.name} ${reason}`);
                 }
                 if (message.room) {
                     this.currentRoom = message.room;
