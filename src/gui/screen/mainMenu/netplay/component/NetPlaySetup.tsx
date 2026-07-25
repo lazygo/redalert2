@@ -183,10 +183,6 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
             {!waitingMode ? (
                 <div className="lan-entry-layout">
                     <div className="lan-panel lan-entry-panel lan-entry-profile-panel">
-                        <div className="lan-panel-header">
-                            <h3>{strings.get('GUI:NetPlayProfile') || '玩家与连接'}</h3>
-                            <span>{strings.get('GUI:NetPlayProfileHint') || '输入昵称后，用右侧菜单连接中继、创建房间或刷新列表。'}</span>
-                        </div>
                         <label className="lan-input-label" htmlFor="netplay-name">
                             {strings.get('GUI:NetPlayPlayerName') || '玩家名称'}
                         </label>
@@ -204,9 +200,6 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
                                 }
                             }}
                         />
-                        <div className="lan-entry-field-hint">
-                            房间成员列表、聊天和开局后的玩家槽位都会使用这个名字。
-                        </div>
                     </div>
 
                     <div className="lan-panel lan-entry-panel">

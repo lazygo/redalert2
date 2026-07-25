@@ -387,7 +387,7 @@
     "GUI:NetPlayDisconnected": "Not connected",
     "GUI:NetPlayNoServer": "Netplay server not configured (config.ini → netplayWsUrl)",
     "GUI:NetPlayProfile": "Player & Connection",
-    "GUI:NetPlayProfileHint": "Enter a nickname, then use the right menu to connect, create a room, or refresh the list.",
+    "GUI:NetPlayProfileHint": "Enter a nickname, then use the right menu to create a room or refresh the list. Connecting to the relay starts automatically.",
     "GUI:NetPlayPlayerName": "Player name",
     "GUI:NetPlayConnect": "Connect",
     "GUI:NetPlayRefresh": "Refresh rooms",

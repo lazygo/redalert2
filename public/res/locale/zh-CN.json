@@ -376,7 +376,7 @@
     "GUI:NetPlayDisconnected": "未连接中继",
     "GUI:NetPlayNoServer": "未配置网络对战服务器（config.ini → netplayWsUrl）",
     "GUI:NetPlayProfile": "玩家与连接",
-    "GUI:NetPlayProfileHint": "输入昵称后，用右侧菜单连接中继、创建房间或刷新列表。",
+    "GUI:NetPlayProfileHint": "输入昵称后，用右侧菜单创建房间或刷新列表。进入本页会自动连接中继。",
     "GUI:NetPlayPlayerName": "玩家名称",
     "GUI:NetPlayConnect": "连接服务器",
     "GUI:NetPlayRefresh": "刷新房间",
