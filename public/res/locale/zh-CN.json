@@ -407,6 +407,7 @@
     "GUI:NetPlayHostTag": "房主",
     "GUI:NetPlayNotReadyTag": "未准备",
     "GUI:NetPlayDisconnectedTag": "掉线",
+    "GUI:NetPlayOffline": "离线",
     "GUI:NetPlayForceLeaveHost": "房主已离开，房间已解散。",
     "GUI:NetPlayForceLeaveDisconnect": "与服务器断开连接，已自动离开房间。",
     "GUI:NetPlayMatchWaitingPlayers": "等待网络",

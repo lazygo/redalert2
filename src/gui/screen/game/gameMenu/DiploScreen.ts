@@ -228,17 +228,22 @@ export class DiploScreen extends GameMenuScreen {
         const snapshot = session.getSnapshot();
         const waiting = new Set(snapshot.waitingReconnectPeerIds);
         const suspected = new Set(snapshot.suspectedDropPeerIds);
+        const active = new Set(snapshot.activePeerIds);
         const transportById = new Map(snapshot.transportMembers.map((member) => [member.id, member]));
         return session.getLaunchDescriptor().humanAssignments.map((assignment) => {
             const member = transportById.get(assignment.peerId);
             let status = PlayerConnectionStatus.Connected;
-            if (waiting.has(assignment.peerId) || suspected.has(assignment.peerId)
+            if (!active.has(assignment.peerId)
+                || waiting.has(assignment.peerId)
+                || suspected.has(assignment.peerId)
                 || member?.status === 'disconnected') {
                 status = PlayerConnectionStatus.Disconnected;
             } else if ((snapshot.responseLagMsByPeerId[assignment.peerId] ?? 0) >= 500) {
                 status = PlayerConnectionStatus.Lagging;
             }
-            const responseMs = snapshot.responseLagMsByPeerId[assignment.peerId];
+            const responseMs = status === PlayerConnectionStatus.Disconnected
+                ? undefined
+                : snapshot.responseLagMsByPeerId[assignment.peerId];
             return {
                 name: assignment.name,
                 status,

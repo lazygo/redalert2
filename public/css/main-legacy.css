@@ -2378,6 +2378,29 @@ input[type="range"]:focus {
     color: #fff;
 }
 
+#ra2web-root .diplo-form .player-kick-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: rgba(40, 40, 40, 0.7);
+    color: #999;
+    border-color: #666;
+}
+
+#ra2web-root .diplo-form .player-kick-btn:disabled:hover {
+    background: rgba(40, 40, 40, 0.7);
+    color: #999;
+}
+
+#ra2web-root .diplo-form .player-response-offline {
+    border-color: #888;
+    background: rgba(40, 40, 40, 0.55);
+}
+
+#ra2web-root .diplo-form .player-response-offline .player-response-ms {
+    color: #ccc;
+    text-shadow: none;
+}
+
 #ra2web-root .diplo-form input[type="checkbox"]:disabled {
     opacity: 0.5;
 }

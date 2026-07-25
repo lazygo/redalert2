@@ -19,6 +19,7 @@ interface Player {
     isAi: boolean;
     isObserver?: boolean;
     defeated: boolean;
+    dropped?: boolean;
     aiDifficulty?: string;
     getUnitsKilled(): number;
     isCombatant(): boolean;
@@ -108,7 +109,16 @@ function getResponseMs(conInfo?: ConInfo): number | undefined {
     }
     return conInfo.ping;
 }
-function ResponseCell({ ms, strings }: { ms?: number; strings: Strings }) {
+function ResponseCell({ ms, strings, offline }: { ms?: number; strings: Strings; offline?: boolean }) {
+    if (offline) {
+        return (
+            <div className="player-response-cell player-response-offline">
+                <span className="player-response-ms">
+                    {strings.get("GUI:NetPlayOffline") || strings.get("GUI:NetPlayDisconnectedTag") || "Offline"}
+                </span>
+            </div>
+        );
+    }
     if (ms === undefined) {
         return null;
     }
@@ -133,7 +143,11 @@ function renderPingCell(
     allowResponse: boolean
 ) {
     if (showResponse) {
-        return allowResponse ? <ResponseCell ms={getResponseMs(conInfo)} strings={strings}/> : null;
+        if (!allowResponse) {
+            return null;
+        }
+        const offline = conInfo?.status === PlayerConnectionStatus.Disconnected;
+        return <ResponseCell ms={getResponseMs(conInfo)} strings={strings} offline={offline}/>;
     }
     const ping = conInfo?.status === PlayerConnectionStatus.Connected
         || conInfo?.status === PlayerConnectionStatus.Lagging
@@ -218,14 +232,16 @@ export const DiploForm: React.FC<DiploFormProps> = ({
               </tr>)}
             {playerInfos.map((playerInfo, index) => {
             const conInfo = conInfos?.find((info) => info.name === playerInfo.player.name);
+            const isOffline = conInfo?.status === PlayerConnectionStatus.Disconnected
+                || Boolean(playerInfo.player.dropped);
             const canKickThis = showKick
                 && !playerInfo.player.isAi
                 && playerInfo.player.name !== localPlayer?.name;
             return (<tr key={index} style={{
-                    color: playerInfo.player.defeated
+                    color: playerInfo.player.defeated || isOffline
                         ? "grey"
                         : playerInfo.player.color.asHexString(),
-                    opacity: conInfo && conInfo.status === PlayerConnectionStatus.Disconnected ? 0.55 : 1,
+                    opacity: isOffline ? 0.55 : 1,
                 }}>
                   {renderCountryCell(playerInfo.player)}
                   <td className="player-name">
@@ -254,7 +270,14 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                   </td>
                   {showResponse && (
                     <td className="player-ping">
-                      {renderPingCell(strings, showResponse, conInfo, !playerInfo.player.isAi)}
+                      {renderPingCell(
+                          strings,
+                          showResponse,
+                          isOffline
+                              ? { name: playerInfo.player.name, status: PlayerConnectionStatus.Disconnected }
+                              : conInfo,
+                          !playerInfo.player.isAi
+                      )}
                     </td>
                   )}
                   {showKick && (
@@ -263,9 +286,13 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                         <button
                           type="button"
                           className="player-kick-btn"
+                          disabled={isOffline}
                           onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
+                              if (isOffline) {
+                                  return;
+                              }
                               onKickPlayer?.(playerInfo.player);
                           }}
                         >
