@@ -197,6 +197,9 @@ export class LanMatchSession {
     public readonly onSnapshotChange = new EventDispatcher<this, LanMatchSnapshotState>();
     public readonly onActionsReceived = new EventDispatcher<this, string>();
     public readonly onMatchResumeFailed = new EventDispatcher<this, void>();
+    /** Local peer was force-dropped by the control peer / host. */
+    public readonly onLocalForcedDrop = new EventDispatcher<this, void>();
+    private localForcedDropNotified = false;
 
     constructor(
         private readonly transport: LanMatchTransport,
@@ -757,11 +760,14 @@ export class LanMatchSession {
             if (message.fromPeerId !== this.getControlPeerId()) {
                 return;
             }
-            const targets = (message.targetPeerIds ?? []).filter(
-                (peerId) => peerId !== this.transport.getSelf().id && this.activePeerIds.has(peerId)
-            );
-            if (targets.length) {
-                this.applyForceDrop(targets);
+            const localPeerId = this.transport.getSelf().id;
+            const targets = (message.targetPeerIds ?? []).filter((peerId) => this.activePeerIds.has(peerId));
+            if (targets.includes(localPeerId)) {
+                this.notifyLocalForcedDrop();
+            }
+            const others = targets.filter((peerId) => peerId !== localPeerId);
+            if (others.length) {
+                this.applyForceDrop(others);
             }
             return;
         }
@@ -920,6 +926,9 @@ export class LanMatchSession {
             return;
         }
 
+        const localPeerId = this.transport.getSelf().id;
+        const localDropped = dropPeerIds.includes(localPeerId);
+
         dropPeerIds.forEach((peerId) => {
             this.activePeerIds.delete(peerId);
             this.suspectedDropPeerIds.delete(peerId);
@@ -932,6 +941,18 @@ export class LanMatchSession {
                 this.turnBatchesByTick.delete(tick);
             }
         });
+
+        if (localDropped) {
+            this.notifyLocalForcedDrop();
+        }
+    }
+
+    private notifyLocalForcedDrop(): void {
+        if (this.disposed || this.localForcedDropNotified) {
+            return;
+        }
+        this.localForcedDropNotified = true;
+        this.onLocalForcedDrop.dispatch(this);
     }
 
     private getControlPeerId(): string {

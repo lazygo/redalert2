@@ -130,6 +130,9 @@ export class GameScreen extends RootScreen {
         let gameOpts: any;
         const lanLaunch = params.lanLaunch;
         this.lanMatchSession = params.lanMatchSession;
+        if (this.lanMatchSession) {
+            this.bindLocalForcedDrop(this.lanMatchSession);
+        }
         const gameId = lanLaunch?.gameId ?? params.gameId;
         const timestamp = lanLaunch?.timestamp ?? params.timestamp;
         this.returnTo = params.returnTo ?? lanLaunch?.returnRoute;
@@ -808,6 +811,26 @@ export class GameScreen extends RootScreen {
         };
         lanMatchSession.onMatchResumeFailed.subscribe(onResumeFailed);
         this.disposables.add(() => lanMatchSession.onMatchResumeFailed.unsubscribe(onResumeFailed));
+    }
+
+    private bindLocalForcedDrop(lanMatchSession: LanMatchSession): void {
+        const onLocalForcedDrop = () => {
+            this.pointer.unlock();
+            this.pointer.setVisible(true);
+            this.gameTurnMgr?.setErrorState?.();
+            this.menu?.close?.();
+            this.loadingScreenApi?.hideNetworkWait?.();
+            this.messageBoxApi.show(
+                this.strings.get('GUI:NetPlayKickedByHost')
+                    || '你已被管理员踢出队伍。',
+                this.strings.get('GUI:Ok') || '确定',
+                () => {
+                    void this.leaveAfterMatchDisconnect();
+                }
+            );
+        };
+        lanMatchSession.onLocalForcedDrop.subscribe(onLocalForcedDrop);
+        this.disposables.add(() => lanMatchSession.onLocalForcedDrop.unsubscribe(onLocalForcedDrop));
     }
 
     private async leaveAfterMatchDisconnect(): Promise<void> {
