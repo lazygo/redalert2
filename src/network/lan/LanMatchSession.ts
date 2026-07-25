@@ -96,8 +96,10 @@ export interface LanMatchSnapshotState {
     /** 0–100 remaining grace for peers currently waiting to reconnect. */
     reconnectRemainPercentByPeerId: Record<string, number>;
     /**
-     * How long since we last got a lockstep turn from each peer (ms).
-     * Reflects relay latency and/or a slow machine holding the sim.
+     * Per-peer intrinsic response lag (ms): how late this peer's turn arrives
+     * relative to the earliest turn for the same tick (EMA-smoothed).
+     * Only peers still missing the stalled tick show a live climbing value —
+     * others are not inflated when lockstep waits on someone else.
      */
     responseLagMsByPeerId: Record<string, number>;
     localReconnecting: boolean;
@@ -117,6 +119,10 @@ export const TURN_STALL_WAIT_UI_MS = 600;
 const TURN_STALL_RESYNC_INTERVAL_MS = 1_500;
 /** Keep resolved local turns so a peer who fell behind can still catch up after resume. */
 const RESOLVED_TURN_ARCHIVE_MAX = 240;
+/** Smooth per-tick arrival lag so the diplo meter does not flicker every poll. */
+const RESPONSE_LAG_EMA_ALPHA = 0.35;
+/** Quantize displayed lag to reduce sub-frame jitter in the UI. */
+const RESPONSE_LAG_DISPLAY_STEP_MS = 25;
 
 function sortAssignments(assignments: LanHumanAssignment[]): LanHumanAssignment[] {
     return assignments
@@ -179,7 +185,8 @@ export class LanMatchSession {
     private readonly resolvedLocalTurnArchive = new Map<number, LanMatchTurnBatch>();
     private readonly localTurnIdByTick = new Map<number, string>();
     private readonly loadPercentByPeerId = new Map<string, number>();
-    private readonly lastTurnAtByPeerId = new Map<string, number>();
+    /** EMA of per-tick arrival lag vs the earliest peer for that tick. */
+    private readonly responseLagEmaByPeerId = new Map<string, number>();
     private graceCheckTimer?: ReturnType<typeof setInterval>;
 
     private lastSnapshot: LanMatchTransportSnapshot;
@@ -201,7 +208,7 @@ export class LanMatchSession {
             this.assignmentByPeerId.set(assignment.peerId, { ...assignment });
             this.activePeerIds.add(assignment.peerId);
             this.loadPercentByPeerId.set(assignment.peerId, 0);
-            this.lastTurnAtByPeerId.set(assignment.peerId, Date.now());
+            this.responseLagEmaByPeerId.set(assignment.peerId, 0);
         });
         this.lastSnapshot = this.transport.getSnapshot();
         this.handleSnapshotChange = this.handleSnapshotChange.bind(this);
@@ -810,10 +817,52 @@ export class LanMatchSession {
         }
 
         tickBatches.set(batch.peerId, cloneBatch(batch));
-        this.lastTurnAtByPeerId.set(batch.peerId, Date.now());
+        this.recordResponseLagSample(batch.peerId, tickBatches);
         this.suspectedDropPeerIds.delete(batch.peerId);
         this.reconnectDeadlineByPeerId.delete(batch.peerId);
         this.dispatchSnapshot();
+    }
+
+    /**
+     * Sample = how late this peer arrived after the earliest turn for the same tick.
+     * Fast peers stay near 0 even while a slow peer is still missing that tick.
+     */
+    private recordResponseLagSample(peerId: string, tickBatches: Map<string, LanMatchTurnBatch>): void {
+        const batch = tickBatches.get(peerId);
+        if (!batch) {
+            return;
+        }
+        let firstReceivedAt = batch.receivedAt;
+        tickBatches.forEach((entry) => {
+            if (entry.receivedAt < firstReceivedAt) {
+                firstReceivedAt = entry.receivedAt;
+            }
+        });
+        const sampleMs = Math.max(0, batch.receivedAt - firstReceivedAt);
+        const previous = this.responseLagEmaByPeerId.get(peerId) ?? sampleMs;
+        this.responseLagEmaByPeerId.set(
+            peerId,
+            previous + RESPONSE_LAG_EMA_ALPHA * (sampleMs - previous)
+        );
+    }
+
+    private getTickFirstReceivedAt(tick: number): number | undefined {
+        const tickBatches = this.turnBatchesByTick.get(tick);
+        if (!tickBatches?.size) {
+            return undefined;
+        }
+        let firstReceivedAt: number | undefined;
+        tickBatches.forEach((batch) => {
+            if (firstReceivedAt === undefined || batch.receivedAt < firstReceivedAt) {
+                firstReceivedAt = batch.receivedAt;
+            }
+        });
+        return firstReceivedAt;
+    }
+
+    private formatResponseLagMs(lagMs: number): number {
+        const capped = Math.min(10_000, Math.max(0, lagMs));
+        return Math.round(capped / RESPONSE_LAG_DISPLAY_STEP_MS) * RESPONSE_LAG_DISPLAY_STEP_MS;
     }
 
     private applyForceDrop(peerIds: string[]): void {
@@ -920,12 +969,15 @@ export class LanMatchSession {
         const localReconnecting = this.isLocalReconnecting();
         const reconnectRemainPercentByPeerId: Record<string, number> = {};
         const responseLagMsByPeerId: Record<string, number> = {};
-        const stallAgeMs = this.stallStartedAt !== undefined
-            ? Math.max(0, now - this.stallStartedAt)
-            : 0;
         const missingForStall = this.stallTick !== undefined
             ? new Set(this.getMissingPeerIdsForTick(this.stallTick))
             : new Set<string>();
+        const stallFirstReceivedAt = this.stallTick !== undefined
+            ? this.getTickFirstReceivedAt(this.stallTick)
+            : undefined;
+        const stallWaitAnchor = stallFirstReceivedAt
+            ?? this.stallStartedAt
+            ?? now;
         this.orderedAssignments.forEach((assignment) => {
             if (waitingIds.has(assignment.peerId)) {
                 reconnectRemainPercentByPeerId[assignment.peerId] = this.getReconnectRemainPercent(assignment.peerId, now);
@@ -938,14 +990,16 @@ export class LanMatchSession {
                 reconnectRemainPercentByPeerId[assignment.peerId] = 100;
             }
 
-            const lastTurnAt = this.lastTurnAtByPeerId.get(assignment.peerId) ?? now;
-            let lagMs = Math.max(0, now - lastTurnAt);
+            // Baseline: smoothed intrinsic lag (stable while others block lockstep).
+            let lagMs = this.responseLagEmaByPeerId.get(assignment.peerId) ?? 0;
             if (waitingIds.has(assignment.peerId) || this.suspectedDropPeerIds.has(assignment.peerId)) {
-                lagMs = Math.max(lagMs, stallAgeMs, 1000);
+                // Dropped / reconnecting: show live wait, do not smear onto healthy peers.
+                lagMs = Math.max(lagMs, now - stallWaitAnchor, 1000);
             } else if (missingForStall.has(assignment.peerId)) {
-                lagMs = Math.max(lagMs, stallAgeMs);
+                // Only the peer(s) holding the current tick climb in real time.
+                lagMs = Math.max(lagMs, now - stallWaitAnchor);
             }
-            responseLagMsByPeerId[assignment.peerId] = Math.min(10_000, Math.round(lagMs));
+            responseLagMsByPeerId[assignment.peerId] = this.formatResponseLagMs(lagMs);
         });
         return {
             gameId: this.descriptor.gameId,

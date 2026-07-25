@@ -2287,28 +2287,54 @@ input[type="range"]:focus {
 
 #ra2web-root .diplo-form th.player-response,
 #ra2web-root .diplo-form td.player-response {
-    width: 120px;
-    min-width: 110px;
+    width: 110px;
+    min-width: 100px;
 }
 
 #ra2web-root .diplo-form .player-response-cell {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    position: relative;
+    display: block;
+    width: 96px;
+    height: 18px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 80, 80, 0.95);
+    background: rgba(0, 0, 0, 0.35);
+    overflow: hidden;
 }
 
-#ra2web-root .diplo-form .player-response-cell meter {
-    width: 70px;
-    height: 18px;
-    background: transparent;
-    border: 1px red solid;
+#ra2web-root .diplo-form .player-response-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    min-width: 0;
+    pointer-events: none;
+}
+
+#ra2web-root .diplo-form .player-response-good .player-response-bar {
+    background: limegreen;
+}
+
+#ra2web-root .diplo-form .player-response-warn .player-response-bar {
+    background: orange;
+}
+
+#ra2web-root .diplo-form .player-response-bad .player-response-bar {
+    background: #e33;
 }
 
 #ra2web-root .diplo-form .player-response-ms {
-    font-size: 12px;
-    min-width: 42px;
-    color: inherit;
-    opacity: 0.9;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1;
+    color: #fff;
+    text-shadow: 0 0 2px #000, 0 1px 2px #000;
+    pointer-events: none;
 }
 
 #ra2web-root .diplo-form th.player-kick,
