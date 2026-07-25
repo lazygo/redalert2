@@ -186,11 +186,11 @@ export const DiploForm: React.FC<DiploFormProps> = ({
           <thead>
             <tr>
               <th className="player-country"></th>
-              <th className="player-ping">{showResponse ? strings.get("GUI:NetPlayResponse") : ""}</th>
               <th className="player-name">{strings.get("GUI:Player")}</th>
               <th>{strings.get("GUI:Allies")}</th>
               {!singlePlayer && <th>{strings.get("GUI:Chat")}</th>}
               <th>{strings.get("GUI:Kills")}</th>
+              {showResponse && <th className="player-ping">{strings.get("GUI:NetPlayResponse")}</th>}
               {showKick && <th className="player-kick">{strings.get("GUI:NetPlayKick")}</th>}
             </tr>
           </thead>
@@ -201,9 +201,6 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                     : localPlayer.color.asHexString(),
             }}>
                 {renderCountryCell(localPlayer)}
-                <td className="player-ping">
-                  {renderPingCell(strings, showResponse, localConInfo, true)}
-                </td>
                 <td className="player-name">{localPlayer.name}</td>
                 <td></td>
                 {!singlePlayer && <td></td>}
@@ -212,6 +209,11 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                 ? localPlayer.getUnitsKilled()
                 : undefined}
                 </td>
+                {showResponse && (
+                  <td className="player-ping">
+                    {renderPingCell(strings, showResponse, localConInfo, true)}
+                  </td>
+                )}
                 {showKick && <td className="player-kick"></td>}
               </tr>)}
             {playerInfos.map((playerInfo, index) => {
@@ -226,9 +228,6 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                     opacity: conInfo && conInfo.status === PlayerConnectionStatus.Disconnected ? 0.55 : 1,
                 }}>
                   {renderCountryCell(playerInfo.player)}
-                  <td className="player-ping">
-                    {renderPingCell(strings, showResponse, conInfo, !playerInfo.player.isAi)}
-                  </td>
                   <td className="player-name">
                     {playerInfo.player.isAi
                     ? strings.get(aiUiNames.get(playerInfo.player.aiDifficulty as any) || '')
@@ -253,6 +252,11 @@ export const DiploForm: React.FC<DiploFormProps> = ({
                     ? playerInfo.player.getUnitsKilled()
                     : undefined}
                   </td>
+                  {showResponse && (
+                    <td className="player-ping">
+                      {renderPingCell(strings, showResponse, conInfo, !playerInfo.player.isAi)}
+                    </td>
+                  )}
                   {showKick && (
                     <td className="player-kick">
                       {canKickThis && (
