@@ -415,5 +415,6 @@
     "GUI:NetPlayMatchReconnectHint": "请保持页面打开，正在尝试恢复对局连接。",
     "GUI:NetPlayMatchResumeFailed": "无法恢复对局连接，即将退出。",
     "GUI:NetPlayKick": "踢出",
+    "GUI:NetPlayKickedByHost": "你已被管理员踢出队伍。",
     "GUI:NetPlayResponse": "响应"
 }
