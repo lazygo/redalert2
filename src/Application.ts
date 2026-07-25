@@ -28,6 +28,9 @@ import { FullScreen } from './gui/FullScreen';
 import { browserFileSystemAccess } from './engine/gameRes/browserFileSystemAccess';
 import type { TestToolRuntimeContext } from './tools/TestToolSupport';
 import { attachPerformanceOptions, installPerformanceDebugApi } from './performance/PerformanceRuntime';
+import { isMobileDevice } from './util/userAgent';
+import { ShadowQuality } from './engine/renderable/entity/unit/ShadowQuality';
+import { ModelQuality } from './engine/renderable/entity/unit/ModelQuality';
 
 const optionalDevModuleImporters: Record<string, () => Promise<any>> = {
     './tools/VxlTester': () => import('./tools/VxlTester'),
@@ -290,13 +293,28 @@ export class Application {
                 console.warn('[Application] Failed to read general options from local storage', error);
             }
         }
+        // Mobile browsers routinely OOM with High models + large shadow maps.
+        if (!this.hasLoadedGeneralOptionsFromStorage && isMobileDevice()) {
+            this.generalOptions.graphics.models.value = ModelQuality.Low;
+            this.generalOptions.graphics.shadows.value = ShadowQuality.Off;
+            console.log('[Application] Applied mobile-safe graphics defaults (low models, shadows off)');
+        }
+        else if (this.hasLoadedGeneralOptionsFromStorage && isMobileDevice()) {
+            // Soft-cap previously saved High shadows so old prefs don't kill the tab.
+            if (this.generalOptions.graphics.shadows.value > ShadowQuality.Low) {
+                this.generalOptions.graphics.shadows.value = ShadowQuality.Low;
+                console.log('[Application] Capped mobile shadow quality to Low');
+            }
+        }
     }
     private initializePreferredViewportSize(): void {
         if (!this.hasLoadedGeneralOptionsFromStorage && this.generalOptions.graphics.resolution.value === undefined) {
-            const defaultViewportSize = {
-                width: this.config?.viewport?.width ?? 1024,
-                height: this.config?.viewport?.height ?? 768,
-            };
+            const defaultViewportSize = isMobileDevice()
+                ? { ...Application.MOBILE_BASE_VIEWPORT }
+                : {
+                    width: this.config?.viewport?.width ?? 1024,
+                    height: this.config?.viewport?.height ?? 768,
+                };
             this.generalOptions.graphics.resolution.value = defaultViewportSize;
             this.preferredViewportSize = defaultViewportSize;
             console.log('[Application] Initialized preferred viewport size from config defaults', defaultViewportSize);

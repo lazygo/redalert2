@@ -19,7 +19,7 @@ export class SoundTester {
         this.audioBag = new AudioBagFile();
         const audioBagFile = fileSystem.openFile("audio.bag");
         const audioIdxFile = fileSystem.openFile("audio.idx");
-        this.audioBag.fromVirtualFile(audioBagFile, new IdxFile(audioIdxFile.stream));
+        await this.audioBag.fromVirtualFile(audioBagFile, new IdxFile(audioIdxFile.stream));
         fileSystem.addArchive(this.audioBag, "audio.bag");
         this.buildBrowser(hostElement);
         this.buildHomeButton();

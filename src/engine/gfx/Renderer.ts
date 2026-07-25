@@ -66,11 +66,15 @@ export class Renderer {
     createGlRenderer(canvas?: HTMLCanvasElement): THREE.WebGLRenderer {
         let renderer: THREE.WebGLRenderer;
         try {
+            // preserveDrawingBuffer doubles framebuffer memory; not needed for gameplay.
             renderer = new THREE.WebGLRenderer({
                 canvas: canvas,
-                preserveDrawingBuffer: true,
+                preserveDrawingBuffer: false,
                 powerPreference: 'high-performance',
+                antialias: false,
             });
+            // Game already picks an internal resolution; keep framebuffer 1× to save GPU RAM on phones.
+            renderer.setPixelRatio(1);
         }
         catch (error) {
             throw new RendererError('Failed to initialize WebGL renderer');

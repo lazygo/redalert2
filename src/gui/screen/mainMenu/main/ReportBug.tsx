@@ -7,7 +7,7 @@ export interface ReportBugProps {
 export const ReportBug: React.FC<ReportBugProps> = ({ discordUrl, strings }) => {
     return (<div style={{ padding: '20px', color: 'white' }}>
       <div style={{ marginBottom: '15px' }}>
-        {strings.get('TS:ReportBugDesc') || '您可以在我们的专用Discord服务器频道上提交错误报告，请点击下面的链接：'}
+        {strings.get('TS:ReportBugDesc') || '您可以点击下面的链接提交错误报告：'}
       </div>
       
       {discordUrl && (<div style={{ textAlign: 'center' }}>

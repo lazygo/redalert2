@@ -9,14 +9,18 @@ import { ShadowQuality } from './entity/unit/ShadowQuality';
 import { MeshBatchManager } from '../gfx/batch/MeshBatchManager';
 import { BoxedVar } from '../../util/BoxedVar';
 import { setMeshLineViewportResolution } from './fx/MeshLineResolution';
+import { isMobileDevice } from '../../util/userAgent';
 import * as THREE from 'three';
 const AMBIENT_LIGHT_INTENSITY = 0.8;
 const CAMERA_FAR = 16000;
+// With camera-focused shadow frustum (below), these map sizes keep on-screen
+// texel density similar to the old full-map 8192 High while using far less VRAM.
 const SHADOW_QUALITY_MAP = new Map([
-    [ShadowQuality.High, 8],
-    [ShadowQuality.Medium, 4],
-    [ShadowQuality.Low, 2]
+    [ShadowQuality.High, 4],
+    [ShadowQuality.Medium, 2],
+    [ShadowQuality.Low, 1]
 ]);
+const LIGHT_DIR_OFFSET = new THREE.Vector3(-87.012, 204.338, 195.409);
 export class WorldScene extends RenderableContainer {
     public scene: THREE.Scene;
     public camera: THREE.OrthographicCamera;
@@ -156,7 +160,7 @@ export class WorldScene extends RenderableContainer {
             this.scene.add(axesHelper);
             this.scene.add(this.ambientLight);
             const light = this.directionalLight;
-            light.position.set(-87.012, 204.338, 195.409);
+            light.position.copy(LIGHT_DIR_OFFSET);
             if (this.lightFocusPoint) {
                 light.position.x += this.lightFocusPoint.x;
                 light.position.z += this.lightFocusPoint.y;
@@ -164,6 +168,7 @@ export class WorldScene extends RenderableContainer {
                 light.target.updateMatrixWorld(undefined);
             }
             this.updateShadowQuality(light, this.shadowQuality.value);
+            this.syncShadowCameraToView(light);
             this.shadowQualityListener = () => this.updateShadowQuality(light, this.shadowQuality.value);
             this.shadowQuality.onChange.subscribe(this.shadowQualityListener);
             this.scene.add(light);
@@ -178,21 +183,58 @@ export class WorldScene extends RenderableContainer {
         light.castShadow = enableShadows;
         if (enableShadows) {
             const worldScale = Coords.ISO_WORLD_SCALE;
-            const shadowSize = 3500 * worldScale;
             const shadowCamera = light.shadow.camera as THREE.OrthographicCamera;
-            shadowCamera.right = shadowSize;
-            shadowCamera.left = -shadowSize;
-            shadowCamera.top = shadowSize;
-            shadowCamera.bottom = -shadowSize;
             shadowCamera.near = -4000 * worldScale;
             shadowCamera.far = 3000 * worldScale;
-            const shadowMapMultiplier = SHADOW_QUALITY_MAP.get(quality);
+            let shadowMapMultiplier = SHADOW_QUALITY_MAP.get(quality);
             if (!shadowMapMultiplier) {
                 throw new Error(`Unsupported shadow quality "${quality}"`);
             }
-            light.shadow.mapSize.width = 1024 * shadowMapMultiplier;
-            light.shadow.mapSize.height = 1024 * shadowMapMultiplier;
+            // Mobile: hard-cap to Low map size (1024).
+            if (isMobileDevice()) {
+                shadowMapMultiplier = Math.min(shadowMapMultiplier, 1);
+            }
+            const nextWidth = 1024 * shadowMapMultiplier;
+            const nextHeight = 1024 * shadowMapMultiplier;
+            if (light.shadow.mapSize.width !== nextWidth || light.shadow.mapSize.height !== nextHeight) {
+                light.shadow.mapSize.width = nextWidth;
+                light.shadow.mapSize.height = nextHeight;
+                (light.shadow.map as any)?.dispose?.();
+                light.shadow.map = null as any;
+            }
+            this.syncShadowCameraToView(light);
         }
+    }
+    /**
+     * Fit the directional shadow camera to the visible view instead of the whole map.
+     * Same on-screen shadow sharpness with a much smaller shadow map.
+     */
+    private syncShadowCameraToView(light: THREE.DirectionalLight): void {
+        if (!light.castShadow) {
+            return;
+        }
+        const cam = this.camera;
+        const halfW = (cam.right - cam.left) / (2 * cam.zoom);
+        const halfH = (cam.top - cam.bottom) / (2 * cam.zoom);
+        const margin = Math.max(halfW, halfH) * 0.4 + 120 * Coords.ISO_WORLD_SCALE;
+        const size = Math.max(halfW, halfH) + margin;
+        const shadowCamera = light.shadow.camera as THREE.OrthographicCamera;
+        shadowCamera.left = -size;
+        shadowCamera.right = size;
+        shadowCamera.top = size;
+        shadowCamera.bottom = -size;
+        shadowCamera.updateProjectionMatrix();
+
+        const focusX = cam.position.x;
+        const focusZ = cam.position.z;
+        light.target.position.set(focusX, 0, focusZ);
+        light.target.updateMatrixWorld(true);
+        light.position.set(
+            focusX + LIGHT_DIR_OFFSET.x,
+            LIGHT_DIR_OFFSET.y,
+            focusZ + LIGHT_DIR_OFFSET.z,
+        );
+        light.updateMatrixWorld();
     }
     setLightFocusPoint(x: number, y: number): void {
         this.lightFocusPoint = { x, y };
@@ -217,6 +259,7 @@ export class WorldScene extends RenderableContainer {
             this.updateCamera(pan, zoom);
             this.lastCameraZoom = zoom;
             this.lastCameraPan = pan;
+            this.syncShadowCameraToView(this.directionalLight);
         }
         this._onCameraUpdate.dispatch(this, deltaTime);
         this.scene.updateMatrixWorld(false);

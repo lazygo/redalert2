@@ -377,6 +377,13 @@ export class GameScreen extends RootScreen {
         this.lanMatchSession?.dispose();
         this.lanMatchSession = undefined;
         this.disposables.dispose();
+        // Drop in-memory VXL meshes; next match reloads from disk cache / rebuilds.
+        try {
+            this.vxlGeometryPool?.clear?.();
+        }
+        catch (error) {
+            console.warn('[GameScreen.onLeave] failed to clear VXL geometry pool', error);
+        }
         this.activeWorldScene = undefined;
         if (hadGameAnimationLoop) {
             this.uiAnimationLoop.start();
