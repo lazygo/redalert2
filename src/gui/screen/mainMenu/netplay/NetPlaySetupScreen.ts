@@ -117,12 +117,14 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         this.refreshSidebarMpText();
         void this.refreshSidebarPreview();
         this.controller.showSidebarButtons();
+        this.transport.setAutoReconnect(true);
         this.startRoomsPoll();
         void this.ensureConnected();
     }
 
     async onLeave(): Promise<void> {
         this.stopRoomsPoll();
+        this.transport.setAutoReconnect(false);
         this.previewRequestId += 1;
         this.roomSession.onSnapshotChange.unsubscribe(this.handleRoomSnapshot);
         this.roomSession.onLaunch.unsubscribe(this.handleLaunch);
@@ -160,6 +162,7 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         void this.refreshSidebarPreview();
         this.refreshView();
         this.controller.showSidebarButtons();
+        this.transport.setAutoReconnect(true);
         this.startRoomsPoll();
         void this.ensureConnected();
     }
@@ -195,6 +198,9 @@ export class NetPlaySetupScreen extends MainMenuScreen {
             this.pendingForceLeaveMessage =
                 this.strings.get('GUI:NetPlayForceLeaveDisconnect') || '与服务器断开连接，已自动离开房间。';
             this.roomSession.leaveRoom();
+        }
+        if (connected && !this.roomSession.getSnapshot().isRoomActive) {
+            this.transport.refreshRooms();
         }
         this.refreshSidebarButtons();
         this.refreshView();
@@ -289,18 +295,21 @@ export class NetPlaySetupScreen extends MainMenuScreen {
     }
 
     private async ensureConnected(): Promise<void> {
-        if (!this.netplayWsUrl || this.transport.isConnected()) {
+        if (!this.netplayWsUrl) {
+            this.refreshSidebarButtons();
+            return;
+        }
+        this.transport.setAutoReconnect(true);
+        if (this.transport.isConnected()) {
             this.refreshSidebarButtons();
             return;
         }
         try {
             await this.connect();
-        } catch (error) {
+        } catch {
+            // Keep trying via transport auto-reconnect; avoid a blocking dialog on transient failures.
             this.refreshSidebarButtons();
-            this.messageBoxApi.show(
-                (error as Error).message,
-                this.strings.get('GUI:Ok') || '确定'
-            );
+            this.refreshView();
         }
     }
 
@@ -468,11 +477,6 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 },
             });
             buttons.push({
-                label: this.strings.get('GUI:NetPlayRefresh') || '刷新房间',
-                disabled: !this.transport.isConnected(),
-                onClick: () => this.transport.refreshRooms(),
-            });
-            buttons.push({
                 label: this.strings.get('GUI:Back') || '返回',
                 isBottom: true,
                 onClick: () => {
@@ -481,20 +485,18 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 },
             });
         } else {
-            buttons.push({
-                label: this.strings.get('GUI:NetPlayStart') || '开始游戏',
-                tooltip: roomSnapshot.isHost
-                    ? (roomSnapshot.canStart
-                        ? (this.strings.get('GUI:NetPlayStartReadyHint') || '所有玩家已准备，可以开始')
-                        : (this.strings.get('GUI:NetPlayNeedReady') || '需要所有玩家准备后才能开始游戏'))
-                    : (this.strings.get('GUI:NetPlayOnlyHostStart') || '只有房主可以开始游戏'),
-                disabled: !roomSnapshot.isHost || !roomSnapshot.canStart,
-                blink: roomSnapshot.isHost && roomSnapshot.canStart,
-                onClick: () => {
-                    void this.startNetGame();
-                },
-            });
             if (roomSnapshot.isHost) {
+                buttons.push({
+                    label: this.strings.get('GUI:NetPlayStart') || '开始游戏',
+                    tooltip: roomSnapshot.canStart
+                        ? (this.strings.get('GUI:NetPlayStartReadyHint') || '所有玩家已准备，可以开始')
+                        : (this.strings.get('GUI:NetPlayNeedReady') || '需要所有玩家准备后才能开始游戏'),
+                    disabled: !roomSnapshot.canStart,
+                    blink: roomSnapshot.canStart,
+                    onClick: () => {
+                        void this.startNetGame();
+                    },
+                });
                 buttons.push({
                     label: this.strings.get('GUI:NetPlayChangeMap') || '更换地图',
                     onClick: () => {
@@ -587,7 +589,10 @@ export class NetPlaySetupScreen extends MainMenuScreen {
             if (this.transport.isConnected() && !this.roomSession.getSnapshot().isRoomActive) {
                 this.transport.refreshRooms();
             }
-        }, 5000);
+        }, 3000);
+        if (this.transport.isConnected() && !this.roomSession.getSnapshot().isRoomActive) {
+            this.transport.refreshRooms();
+        }
     }
 
     private stopRoomsPoll(): void {

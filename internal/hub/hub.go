@@ -44,10 +44,103 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Hub) unregister(c *Client) {
-	h.leaveRoom(c, "disconnect")
+	h.detachOrLeave(c)
 	h.mu.Lock()
 	delete(h.clients, c.id)
 	h.mu.Unlock()
+}
+
+func (h *Hub) detachOrLeave(c *Client) {
+	roomID := c.roomID
+	if roomID == "" {
+		return
+	}
+	h.mu.RLock()
+	room, ok := h.rooms[roomID]
+	h.mu.RUnlock()
+	if !ok {
+		c.roomID = ""
+		return
+	}
+	if room.Status() == protocol.RoomStatusStarted && room.DetachDuringMatch(c, MatchReconnectGrace) {
+		peer := protocol.PeerInfo{ID: c.id, Name: c.name}
+		c.roomID = ""
+		info := room.Info()
+		room.Broadcast("", protocol.Envelope{
+			Type:   protocol.TypeMemberLeave,
+			Member: &peer,
+			Reason: "disconnecting",
+			Room:   &info,
+		})
+		go h.finalizeDetachAfterGrace(roomID, peer.ID, MatchReconnectGrace)
+		return
+	}
+	h.leaveRoom(c, "disconnect")
+}
+
+func (h *Hub) finalizeDetachAfterGrace(roomID, peerID string, grace time.Duration) {
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	<-timer.C
+
+	h.mu.RLock()
+	room, ok := h.rooms[roomID]
+	h.mu.RUnlock()
+	if !ok || !room.HasDetached(peerID) {
+		return
+	}
+	seat := room.ClearDetached(peerID)
+	if seat == nil {
+		return
+	}
+
+	peer := protocol.PeerInfo{ID: peerID, Name: seat.Name}
+	empty := false
+	wasHost := seat.WasHost
+	h.mu.RLock()
+	_, roomStillExists := h.rooms[roomID]
+	h.mu.RUnlock()
+	if !roomStillExists {
+		return
+	}
+
+	// Count remaining after clearing this detached seat.
+	infoBefore := room.Info()
+	empty = infoBefore.PlayerCount == 0
+	if empty {
+		h.mu.Lock()
+		delete(h.rooms, roomID)
+		h.mu.Unlock()
+		h.broadcastRoomList()
+		return
+	}
+
+	if wasHost {
+		remaining := room.DrainMembers()
+		h.mu.Lock()
+		delete(h.rooms, roomID)
+		h.mu.Unlock()
+		for _, member := range remaining {
+			member.roomID = ""
+			member.SendJSON(protocol.Envelope{
+				Type:   protocol.TypeRoomLeft,
+				RoomID: roomID,
+				Reason: "host_disconnect",
+				Member: &peer,
+			})
+		}
+		h.broadcastRoomList()
+		return
+	}
+
+	info := room.Info()
+	room.Broadcast("", protocol.Envelope{
+		Type:   protocol.TypeMemberLeave,
+		Member: &peer,
+		Reason: "disconnect",
+		Room:   &info,
+	})
+	h.broadcastRoomList()
 }
 
 func (h *Hub) handleMessage(c *Client, env *protocol.Envelope) {
@@ -83,6 +176,18 @@ func (h *Hub) handleHello(c *Client, env *protocol.Envelope) {
 		c.SendJSON(protocol.Envelope{Type: protocol.TypeError, Code: "bad_nickname", Message: "nickname required"})
 		return
 	}
+
+	if env.ResumePeerID != "" && env.RoomID != "" {
+		if h.tryResumeMatch(c, env.RoomID, env.ResumePeerID, name) {
+			return
+		}
+		c.SendJSON(protocol.Envelope{
+			Type:    protocol.TypeError,
+			Code:    "resume_failed",
+			Message: "unable to resume match seat",
+		})
+	}
+
 	c.mu.Lock()
 	c.name = name
 	c.helloed = true
@@ -93,6 +198,62 @@ func (h *Hub) handleHello(c *Client, env *protocol.Envelope) {
 		Member: &protocol.PeerInfo{ID: c.id, Name: name},
 	})
 	h.sendRoomList(c)
+}
+
+// tryResumeMatch reassigns this connection to a detached started-match seat.
+func (h *Hub) tryResumeMatch(c *Client, roomID, peerID, name string) bool {
+	h.mu.Lock()
+	room, ok := h.rooms[roomID]
+	if !ok {
+		h.mu.Unlock()
+		return false
+	}
+	if !room.HasDetached(peerID) {
+		h.mu.Unlock()
+		return false
+	}
+	oldID := c.id
+	delete(h.clients, oldID)
+	c.id = peerID
+	c.name = name
+	c.helloed = true
+	c.roomID = roomID
+	h.clients[peerID] = c
+	h.mu.Unlock()
+
+	if !room.TryReattach(c) {
+		h.mu.Lock()
+		delete(h.clients, peerID)
+		c.id = oldID
+		c.roomID = ""
+		c.helloed = false
+		h.clients[oldID] = c
+		h.mu.Unlock()
+		return false
+	}
+
+	info := room.Info()
+	peer := c.PeerInfo()
+	c.SendJSON(protocol.Envelope{
+		Type:   protocol.TypeWelcome,
+		PeerID: peer.ID,
+		Member: &peer,
+	})
+	c.SendJSON(protocol.Envelope{Type: protocol.TypeRoomJoined, Room: &info})
+	room.Broadcast(c.id, protocol.Envelope{
+		Type:   protocol.TypeMemberJoin,
+		Member: &peer,
+		Reason: "reconnected",
+		Room:   &info,
+	})
+	for _, m := range room.MemberList() {
+		if m.ID == c.id {
+			continue
+		}
+		mm := m
+		c.SendJSON(protocol.Envelope{Type: protocol.TypeMemberJoin, Member: &mm, Room: &info})
+	}
+	return true
 }
 
 func (h *Hub) requireHello(c *Client) bool {

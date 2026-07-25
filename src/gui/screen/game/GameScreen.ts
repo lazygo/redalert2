@@ -81,6 +81,7 @@ export class GameScreen extends RootScreen {
     private sidebarModel?: any;
     private loadingScreenApi?: any;
     private lagState = false;
+    private networkWaitEl?: HTMLDivElement;
     private chatTypingHandler?: any;
     private chatNetHandler?: any;
     private lanMatchSession?: LanMatchSession;
@@ -376,6 +377,7 @@ export class GameScreen extends RootScreen {
         this.lanMatchSession?.leaveRoom();
         this.lanMatchSession?.dispose();
         this.lanMatchSession = undefined;
+        this.hideNetworkWaitOverlay();
         this.disposables.dispose();
         // Drop in-memory VXL meshes; next match reloads from disk cache / rebuilds.
         try {
@@ -689,7 +691,92 @@ export class GameScreen extends RootScreen {
         };
         lockstepManager.onLagStateChange.subscribe(onLagStateChange);
         this.disposables.add(() => lockstepManager.onLagStateChange.unsubscribe(onLagStateChange));
+        this.bindNetworkWaitOverlay(lanMatchSession);
         return lockstepManager;
+    }
+
+    private bindNetworkWaitOverlay(lanMatchSession: LanMatchSession): void {
+        const updateOverlay = (snapshot: ReturnType<LanMatchSession['getSnapshot']>) => {
+            if (snapshot.localReconnecting) {
+                this.showNetworkWaitOverlay(
+                    this.strings.get('GUI:NetPlayMatchReconnecting') || '网络中断，正在重连…',
+                    this.strings.get('GUI:NetPlayMatchReconnectHint') || '请保持页面打开，正在尝试恢复对局连接。'
+                );
+                return;
+            }
+            if (snapshot.waitingReconnectPeerIds.length) {
+                const names = snapshot.waitingReconnectPeerIds
+                    .map((peerId) => {
+                        const assignment = lanMatchSession.getHumanAssignment(peerId);
+                        const member = snapshot.transportMembers.find((entry) => entry.id === peerId);
+                        return assignment?.name || (member as { name?: string })?.name || peerId;
+                    })
+                    .join('、');
+                this.showNetworkWaitOverlay(
+                    this.strings.get('GUI:NetPlayMatchWaitingPlayers') || '网络等待',
+                    (this.strings.get('GUI:NetPlayMatchWaitingPlayersHint') || '正在等待玩家重连：%s').replace('%s', names)
+                );
+                return;
+            }
+            this.hideNetworkWaitOverlay();
+        };
+        updateOverlay(lanMatchSession.getSnapshot());
+        lanMatchSession.onSnapshotChange.subscribe(updateOverlay);
+        this.disposables.add(() => {
+            lanMatchSession.onSnapshotChange.unsubscribe(updateOverlay);
+            this.hideNetworkWaitOverlay();
+        });
+
+        const onResumeFailed = () => {
+            this.hideNetworkWaitOverlay();
+            this.messageBoxApi.show(
+                this.strings.get('GUI:NetPlayMatchResumeFailed') || '无法恢复对局连接，即将退出。',
+                this.strings.get('GUI:Ok') || '确定',
+                () => {
+                    void this.leaveAfterMatchDisconnect();
+                }
+            );
+        };
+        lanMatchSession.onMatchResumeFailed.subscribe(onResumeFailed);
+        this.disposables.add(() => lanMatchSession.onMatchResumeFailed.unsubscribe(onResumeFailed));
+    }
+
+    private async leaveAfterMatchDisconnect(): Promise<void> {
+        try {
+            this.lanMatchSession?.leaveRoom();
+        } catch {
+            // ignore
+        }
+        await this.onLeave();
+        const route = this.returnTo ?? new MainMenuRoute(MainMenuScreenType.Home, undefined);
+        this.controller?.goToScreen(ScreenType.MainMenuRoot, { route });
+    }
+
+    private showNetworkWaitOverlay(title: string, body: string): void {
+        const root = document.getElementById('ra2web-root') || document.body;
+        if (!this.networkWaitEl) {
+            this.networkWaitEl = document.createElement('div');
+            this.networkWaitEl.className = 'network-wait-overlay';
+            root.appendChild(this.networkWaitEl);
+        }
+        this.networkWaitEl.innerHTML =
+            `<div class="network-wait-dialog">` +
+            `<h3>${this.escapeHtml(title)}</h3>` +
+            `<p>${this.escapeHtml(body)}</p>` +
+            `</div>`;
+    }
+
+    private hideNetworkWaitOverlay(): void {
+        this.networkWaitEl?.remove();
+        this.networkWaitEl = undefined;
+    }
+
+    private escapeHtml(text: string): string {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
     private onGameStart(localPlayer: any, game: any, uiInitResult: any, actionQueue: any, actionFactory: any, replay: any): void {
         this.localPrefs.removeItem(StorageKey.LastConnection);

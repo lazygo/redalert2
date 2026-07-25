@@ -5,7 +5,7 @@ import { PregameController } from '@/gui/screen/mainMenu/lobby/PregameController
 import { ChatHistory } from '@/gui/chat/ChatHistory';
 import { List, ListItem } from '@/gui/component/List';
 import { NetRoomSession } from '@/network/netplay/NetRoomSession';
-import { WsRoomTransport } from '@/network/netplay/WsRoomTransport';
+import { WsRoomTransport, NetPlayConnectionStatus } from '@/network/netplay/WsRoomTransport';
 import { NetPlayRoomInfo } from '@/network/netplay/NetPlayProtocol';
 import { LanRoomSnapshot } from '@/network/lan/LanRoomSession';
 import { GameSpeed } from '@/game/GameSpeed';
@@ -37,33 +37,33 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
 }) => {
     const [nameInput, setNameInput] = useState(transport.getSelf().name);
     const [connected, setConnected] = useState(transport.isConnected());
+    const [connectionStatus, setConnectionStatus] = useState<NetPlayConnectionStatus>(
+        transport.getConnectionStatus()
+    );
     const [rooms, setRooms] = useState<NetPlayRoomInfo[]>(transport.getRooms());
     const [roomSnapshot, setRoomSnapshot] = useState<LanRoomSnapshot>(roomSession.getSnapshot());
     const [busy, setBusy] = useState(false);
-    const [statusText, setStatusText] = useState<string>('');
+    const [actionError, setActionError] = useState('');
 
     useEffect(() => {
         const onConn = (value: boolean) => setConnected(value);
+        const onStatus = (status: NetPlayConnectionStatus) => setConnectionStatus(status);
         const onRooms = (next: NetPlayRoomInfo[]) => setRooms(next);
         const onRoomSnap = (snap: LanRoomSnapshot) => setRoomSnapshot(snap);
-        const onLog = (entry: { level: string; text: string }) => {
-            setStatusText(entry.text);
-        };
         transport.onConnectionChange.subscribe(onConn);
+        transport.onConnectionStatusChange.subscribe(onStatus);
         transport.onRoomsChange.subscribe(onRooms);
         roomSession.onSnapshotChange.subscribe(onRoomSnap);
-        transport.onLog.subscribe(onLog);
-        roomSession.onLog.subscribe(onLog);
         setConnected(transport.isConnected());
+        setConnectionStatus(transport.getConnectionStatus());
         setRooms(transport.getRooms());
         setRoomSnapshot(roomSession.getSnapshot());
         setNameInput(transport.getSelf().name);
         return () => {
             transport.onConnectionChange.unsubscribe(onConn);
+            transport.onConnectionStatusChange.unsubscribe(onStatus);
             transport.onRoomsChange.unsubscribe(onRooms);
             roomSession.onSnapshotChange.unsubscribe(onRoomSnap);
-            transport.onLog.unsubscribe(onLog);
-            roomSession.onLog.unsubscribe(onLog);
         };
     }, [transport, roomSession, resetNonce]);
 
@@ -175,11 +175,14 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
         >
             <div className="lan-setup-notice">
                 {wsUrl
-                    ? (connected
-                        ? (strings.get('GUI:NetPlayConnected') || `已连接：${wsUrl}`)
-                        : (strings.get('GUI:NetPlayDisconnected') || `未连接：${wsUrl}`))
+                    ? (connectionStatus === 'connected'
+                        ? (strings.get('GUI:NetPlayConnected') || '已连接中继')
+                        : connectionStatus === 'reconnecting'
+                            ? (strings.get('GUI:NetPlayReconnecting') || '重连中…')
+                            : connectionStatus === 'connecting'
+                                ? (strings.get('GUI:NetPlayConnecting') || '连接中…')
+                                : (strings.get('GUI:NetPlayDisconnected') || '未连接中继'))
                     : (strings.get('GUI:NetPlayNoServer') || '未配置网络对战服务器（config.ini → netplayWsUrl）')}
-                {statusText ? ` · ${statusText}` : ''}
             </div>
 
             {!waitingMode ? (
@@ -213,6 +216,11 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
                                     : (strings.get('GUI:NetPlayConnectFirst') || '请先连接服务器')}
                             </span>
                         </div>
+                        {actionError ? (
+                            <div className="lan-setup-notice" style={{ marginBottom: 8 }}>
+                                {actionError}
+                            </div>
+                        ) : null}
                         {rooms.length ? (
                             <List className="lan-entry-recent-list">
                                 {rooms.map((room) => (
@@ -236,11 +244,12 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
                                                 onClick={() => {
                                                     void (async () => {
                                                         setBusy(true);
+                                                        setActionError('');
                                                         try {
                                                             commitName();
                                                             await onJoinRoom(room.roomId);
                                                         } catch (error) {
-                                                            setStatusText((error as Error).message);
+                                                            setActionError((error as Error).message || String(error));
                                                         } finally {
                                                             setBusy(false);
                                                         }

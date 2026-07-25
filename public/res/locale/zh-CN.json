@@ -374,9 +374,11 @@
     "GUI:Back": "返回",
     "GUI:NetPlayConnected": "已连接中继",
     "GUI:NetPlayDisconnected": "未连接中继",
+    "GUI:NetPlayConnecting": "连接中…",
+    "GUI:NetPlayReconnecting": "重连中…",
     "GUI:NetPlayNoServer": "未配置网络对战服务器（config.ini → netplayWsUrl）",
     "GUI:NetPlayProfile": "玩家与连接",
-    "GUI:NetPlayProfileHint": "输入昵称后，用右侧菜单创建房间或刷新列表。进入本页会自动连接中继。",
+    "GUI:NetPlayProfileHint": "输入昵称后，用右侧菜单创建房间。",
     "GUI:NetPlayPlayerName": "玩家名称",
     "GUI:NetPlayConnect": "连接服务器",
     "GUI:NetPlayRefresh": "刷新房间",
@@ -406,5 +408,10 @@
     "GUI:NetPlayNotReadyTag": "未准备",
     "GUI:NetPlayDisconnectedTag": "掉线",
     "GUI:NetPlayForceLeaveHost": "房主已离开，房间已解散。",
-    "GUI:NetPlayForceLeaveDisconnect": "与服务器断开连接，已自动离开房间。"
+    "GUI:NetPlayForceLeaveDisconnect": "与服务器断开连接，已自动离开房间。",
+    "GUI:NetPlayMatchWaitingPlayers": "网络等待",
+    "GUI:NetPlayMatchWaitingPlayersHint": "正在等待玩家重连：%s",
+    "GUI:NetPlayMatchReconnecting": "网络中断，正在重连…",
+    "GUI:NetPlayMatchReconnectHint": "请保持页面打开，正在尝试恢复对局连接。",
+    "GUI:NetPlayMatchResumeFailed": "无法恢复对局连接，即将退出。"
 }

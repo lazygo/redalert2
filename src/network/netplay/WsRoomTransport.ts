@@ -5,6 +5,8 @@ import { LanPeerIdentity } from '@/network/lan/LanQrPayload';
 import { WsClient } from '@/network/netplay/WsClient';
 import { NetPlayPeerInfo, NetPlayRoomInfo, NetPlayServerMessage } from '@/network/netplay/NetPlayProtocol';
 
+export type NetPlayConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
+
 export interface WsRoomTransportSnapshot {
     self: LanPeerIdentity;
     roomId?: string;
@@ -29,23 +31,50 @@ export class WsRoomTransport implements LanMatchTransport {
     private members = new Map<string, NetPlayPeerInfo>();
     private rooms: NetPlayRoomInfo[] = [];
     private welcomeReceived = false;
+    private autoReconnect = false;
+    private reconnectUrl?: string;
+    private reconnectNickname = 'Player';
+    private reconnectAttempt = 0;
+    private reconnectTimer?: ReturnType<typeof setTimeout>;
+    private connectPromise?: Promise<void>;
+    private matchMode = false;
+    private disconnectedMemberIds = new Set<string>();
+    private connectionStatus: NetPlayConnectionStatus = 'disconnected';
+    private hasConnectedOnce = false;
 
     public readonly onSnapshotChange = new EventDispatcher<this, LanMeshSnapshot>();
     public readonly onAppMessage = new EventDispatcher<this, LanMeshAppMessage>();
     public readonly onRoomsChange = new EventDispatcher<this, NetPlayRoomInfo[]>();
     public readonly onLog = new EventDispatcher<this, { level: 'info' | 'warn' | 'error'; text: string; timestamp: number }>();
     public readonly onConnectionChange = new EventDispatcher<this, boolean>();
+    public readonly onConnectionStatusChange = new EventDispatcher<this, NetPlayConnectionStatus>();
+    public readonly onMatchResumeFailed = new EventDispatcher<this, void>();
 
     constructor() {
         this.client.onMessage.subscribe((message) => this.handleServerMessage(message));
         this.client.onStatusChange.subscribe((status) => {
-            if (status !== 'connected' && this.roomId) {
-                this.roomId = undefined;
-                this.currentRoom = undefined;
-                this.members.clear();
-                this.log('warn', '与服务器断开连接，已自动离开房间');
+            if (status !== 'connected') {
+                this.welcomeReceived = false;
+                if (this.matchMode && this.roomId) {
+                    this.log('warn', '对局连接中断，正在尝试重连…');
+                } else if (this.roomId) {
+                    this.roomId = undefined;
+                    this.currentRoom = undefined;
+                    this.members.clear();
+                    this.disconnectedMemberIds.clear();
+                    this.log('warn', '与服务器断开连接，已自动离开房间');
+                }
+                this.onConnectionChange.dispatch(this, false);
+                this.dispatchSnapshot();
+                if (this.autoReconnect && !this.connectPromise) {
+                    this.scheduleReconnect();
+                } else if (!this.connectPromise) {
+                    this.setConnectionStatus(
+                        this.autoReconnect && this.hasConnectedOnce ? 'reconnecting' : 'disconnected'
+                    );
+                }
+                return;
             }
-            this.onConnectionChange.dispatch(this, status === 'connected');
             this.dispatchSnapshot();
         });
         this.client.onError.subscribe((text) => {
@@ -54,14 +83,58 @@ export class WsRoomTransport implements LanMatchTransport {
     }
 
     async connect(url: string, nickname: string): Promise<void> {
-        this.self = { id: '', name: nickname.trim() || 'Player' };
-        this.welcomeReceived = false;
-        await this.client.connect(url);
-        this.client.send({ type: 'hello', nickname: this.self.name });
-        await this.waitForWelcome(8000);
+        this.reconnectUrl = url;
+        this.reconnectNickname = nickname.trim() || 'Player';
+        this.clearReconnectTimer();
+        this.setConnectionStatus(this.hasConnectedOnce || this.matchMode ? 'reconnecting' : 'connecting');
+        try {
+            await this.connectInternal();
+        } catch (error) {
+            if (this.autoReconnect) {
+                this.scheduleReconnect();
+            } else {
+                this.setConnectionStatus('disconnected');
+            }
+            throw error;
+        }
+    }
+
+    /** Lobby screen enables this; leave/game launch disables so mid-match reconnect stays off. */
+    setAutoReconnect(enabled: boolean): void {
+        // Match mode owns reconnect until setMatchReconnect(false); ignore lobby onLeave.
+        if (!enabled && this.matchMode) {
+            return;
+        }
+        this.autoReconnect = enabled;
+        if (!enabled) {
+            this.clearReconnectTimer();
+            if (!this.isConnected()) {
+                this.setConnectionStatus('disconnected');
+            }
+            return;
+        }
+        if (!this.isConnected() && this.reconnectUrl && !this.connectPromise) {
+            this.scheduleReconnect();
+        }
+    }
+
+    /** Keep room seat + auto-reconnect while a lockstep match is running. */
+    setMatchReconnect(enabled: boolean): void {
+        this.matchMode = enabled;
+        this.setAutoReconnect(enabled);
+        if (!enabled) {
+            this.disconnectedMemberIds.clear();
+        }
+    }
+
+    getConnectionStatus(): NetPlayConnectionStatus {
+        return this.connectionStatus;
     }
 
     disconnect(): void {
+        this.matchMode = false;
+        this.autoReconnect = false;
+        this.clearReconnectTimer();
         try {
             if (this.roomId) {
                 this.client.send({ type: 'leave-room' });
@@ -72,8 +145,107 @@ export class WsRoomTransport implements LanMatchTransport {
         this.roomId = undefined;
         this.currentRoom = undefined;
         this.members.clear();
+        this.disconnectedMemberIds.clear();
+        this.welcomeReceived = false;
         this.client.disconnect();
+        this.setConnectionStatus('disconnected');
         this.dispatchSnapshot();
+    }
+
+    private async connectInternal(): Promise<void> {
+        if (this.connectPromise) {
+            return this.connectPromise;
+        }
+        if (!this.reconnectUrl) {
+            throw new Error('WebSocket URL is not set');
+        }
+        const resumePeerId = this.matchMode ? this.self.id : '';
+        const resumeRoomId = this.matchMode ? this.roomId : undefined;
+        this.setConnectionStatus(
+            this.hasConnectedOnce || this.reconnectAttempt > 0 || this.matchMode ? 'reconnecting' : 'connecting'
+        );
+        this.connectPromise = (async () => {
+            this.self = {
+                id: resumePeerId || '',
+                name: this.reconnectNickname,
+            };
+            this.welcomeReceived = false;
+            try {
+                await this.client.connect(this.reconnectUrl!);
+                const hello: { type: 'hello'; nickname: string; resumePeerId?: string; roomId?: string } = {
+                    type: 'hello',
+                    nickname: this.self.name,
+                };
+                if (resumePeerId && resumeRoomId) {
+                    hello.resumePeerId = resumePeerId;
+                    hello.roomId = resumeRoomId;
+                }
+                this.client.send(hello);
+                await this.waitForWelcome(8000);
+                if (resumePeerId && (this.self.id !== resumePeerId || this.roomId !== resumeRoomId)) {
+                    this.matchMode = false;
+                    this.autoReconnect = false;
+                    this.onMatchResumeFailed.dispatch(this);
+                    throw new Error('match resume failed');
+                }
+            } catch (error) {
+                try {
+                    this.client.disconnect();
+                } catch {
+                    // ignore
+                }
+                this.welcomeReceived = false;
+                throw error;
+            }
+            this.reconnectAttempt = 0;
+            this.hasConnectedOnce = true;
+            if (!this.matchMode) {
+                this.refreshRooms();
+            }
+        })();
+        try {
+            await this.connectPromise;
+        } finally {
+            this.connectPromise = undefined;
+        }
+    }
+
+    private scheduleReconnect(): void {
+        if (!this.autoReconnect || !this.reconnectUrl || this.reconnectTimer || this.connectPromise) {
+            return;
+        }
+        if (this.client.getStatus() === 'connecting' || this.client.isConnected()) {
+            return;
+        }
+        this.setConnectionStatus('reconnecting');
+        const delayMs = Math.min(1000 * (2 ** this.reconnectAttempt), 15000);
+        this.reconnectAttempt += 1;
+        this.log('warn', `连接断开，${Math.round(delayMs / 1000)}s 后尝试重连…`);
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = undefined;
+            if (!this.autoReconnect || this.isConnected()) {
+                return;
+            }
+            void this.connectInternal().catch((error) => {
+                this.log('warn', `重连失败: ${(error as Error).message || String(error)}`);
+                this.scheduleReconnect();
+            });
+        }, delayMs);
+    }
+
+    private clearReconnectTimer(): void {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = undefined;
+        }
+    }
+
+    private setConnectionStatus(status: NetPlayConnectionStatus): void {
+        if (this.connectionStatus === status) {
+            return;
+        }
+        this.connectionStatus = status;
+        this.onConnectionStatusChange.dispatch(this, status);
     }
 
     isConnected(): boolean {
@@ -86,6 +258,7 @@ export class WsRoomTransport implements LanMatchTransport {
 
     updateSelfName(name: string): void {
         this.self = { ...this.self, name: name.trim() || this.self.name };
+        this.reconnectNickname = this.self.name;
         this.dispatchSnapshot();
     }
 
@@ -131,6 +304,7 @@ export class WsRoomTransport implements LanMatchTransport {
         if (!this.roomId) {
             return;
         }
+        this.matchMode = true;
         this.client.send({ type: 'start-match' });
     }
 
@@ -140,6 +314,9 @@ export class WsRoomTransport implements LanMatchTransport {
     }
 
     leaveRoom(): void {
+        this.matchMode = false;
+        this.autoReconnect = false;
+        this.clearReconnectTimer();
         if (!this.roomId) {
             this.dispatchSnapshot();
             return;
@@ -152,6 +329,7 @@ export class WsRoomTransport implements LanMatchTransport {
         this.roomId = undefined;
         this.currentRoom = undefined;
         this.members.clear();
+        this.disconnectedMemberIds.clear();
         this.dispatchSnapshot();
     }
 
@@ -174,7 +352,9 @@ export class WsRoomTransport implements LanMatchTransport {
                 name: member.name,
                 isSelf: false,
                 isDirect: true,
-                status: this.roomId ? 'connected' : 'known',
+                status: this.disconnectedMemberIds.has(member.id)
+                    ? 'disconnected'
+                    : (this.roomId ? 'connected' : 'known'),
             });
         });
         return {
@@ -207,6 +387,12 @@ export class WsRoomTransport implements LanMatchTransport {
         if (!this.roomId) {
             return;
         }
+        if (!this.client.isConnected()) {
+            if (this.matchMode) {
+                return;
+            }
+            throw new Error('WebSocket is not connected');
+        }
         // Server broadcasts to everyone except sender; excludedPeerId is best-effort client-side only.
         void excludedPeerId;
         this.client.send({ type: 'room-broadcast', payload });
@@ -224,7 +410,11 @@ export class WsRoomTransport implements LanMatchTransport {
             case 'welcome':
                 this.self = { id: message.peerId, name: message.member?.name || this.self.name };
                 this.welcomeReceived = true;
+                this.hasConnectedOnce = true;
+                this.reconnectAttempt = 0;
                 this.log('info', `已连接，peerId=${message.peerId}`);
+                this.setConnectionStatus('connected');
+                this.onConnectionChange.dispatch(this, true);
                 this.dispatchSnapshot();
                 return;
             case 'room-list':
@@ -235,15 +425,25 @@ export class WsRoomTransport implements LanMatchTransport {
             case 'room-joined':
                 this.roomId = message.room.roomId;
                 this.currentRoom = message.room;
-                this.members.clear();
-                this.members.set(this.self.id, { id: this.self.id, name: this.self.name });
+                if (!this.matchMode || this.members.size === 0) {
+                    this.members.clear();
+                    this.disconnectedMemberIds.clear();
+                    this.members.set(this.self.id, { id: this.self.id, name: this.self.name });
+                } else {
+                    this.disconnectedMemberIds.delete(this.self.id);
+                    this.members.set(this.self.id, { id: this.self.id, name: this.self.name });
+                }
                 this.log('info', `已加入房间 ${message.room.title}`);
                 this.dispatchSnapshot();
                 return;
             case 'room-left':
+                this.matchMode = false;
+                this.autoReconnect = false;
+                this.clearReconnectTimer();
                 this.roomId = undefined;
                 this.currentRoom = undefined;
                 this.members.clear();
+                this.disconnectedMemberIds.clear();
                 if (message.reason === 'host_disconnect' || message.reason === 'host_left') {
                     this.log('warn', '房主已离开，房间已解散');
                 } else if (message.reason === 'disconnect') {
@@ -256,6 +456,10 @@ export class WsRoomTransport implements LanMatchTransport {
             case 'member-join':
                 if (message.member) {
                     this.members.set(message.member.id, message.member);
+                    this.disconnectedMemberIds.delete(message.member.id);
+                    if (message.reason === 'reconnected') {
+                        this.log('info', `${message.member.name} 已重连`);
+                    }
                 }
                 if (message.room) {
                     this.currentRoom = message.room;
@@ -265,9 +469,16 @@ export class WsRoomTransport implements LanMatchTransport {
                 return;
             case 'member-leave':
                 if (message.member) {
-                    this.members.delete(message.member.id);
-                    const reason = message.reason === 'disconnect' ? '断开连接' : '离开房间';
-                    this.log('warn', `${message.member.name} ${reason}`);
+                    if (message.reason === 'disconnecting') {
+                        this.members.set(message.member.id, message.member);
+                        this.disconnectedMemberIds.add(message.member.id);
+                        this.log('warn', `${message.member.name} 掉线，等待重连…`);
+                    } else {
+                        this.members.delete(message.member.id);
+                        this.disconnectedMemberIds.delete(message.member.id);
+                        const reason = message.reason === 'disconnect' ? '断开连接' : '离开房间';
+                        this.log('warn', `${message.member.name} ${reason}`);
+                    }
                 }
                 if (message.room) {
                     this.currentRoom = message.room;
