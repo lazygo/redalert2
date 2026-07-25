@@ -424,7 +424,8 @@ export class LanRoomSession {
     }
 
     leaveRoom(): void {
-        if (this.roomState && this.isHost()) {
+        // Netplay dissolves the room on the hub when the host leaves; no client-side handover.
+        if (this.roomState && this.isHost() && this.launchKind !== 'netplay') {
             const nextHostPeerId = this.findNextHostPeerId(this.roomState.hostPeerId);
             if (nextHostPeerId) {
                 this.meshSession.broadcastAppMessage({
@@ -478,6 +479,7 @@ export class LanRoomSession {
     }
 
     private handleMeshSnapshot(snapshot: LanMeshSnapshot): void {
+        const previousMembers = this.lastMeshSnapshot.members;
         this.lastMeshSnapshot = snapshot;
         if (!snapshot.isInRoom) {
             this.roomState = undefined;
@@ -488,6 +490,25 @@ export class LanRoomSession {
             return;
         }
         if (!this.roomState) {
+            this.dispatchSnapshot();
+            return;
+        }
+
+        const nextIds = new Set(snapshot.members.map((member) => member.id));
+        const departed = previousMembers.filter((member) => !member.isSelf && !nextIds.has(member.id));
+        departed.forEach((member) => {
+            const assignmentName = this.roomState?.humanAssignments.find((a) => a.peerId === member.id)?.name;
+            this.log('warn', `${assignmentName || member.name} 已断开连接`);
+        });
+
+        // Netplay: if the host vanished from the mesh, dissolve locally (hub also kicks everyone).
+        if (this.launchKind === 'netplay' && !nextIds.has(this.roomState.hostPeerId)) {
+            this.log('warn', '房主已断开，房间已解散');
+            this.roomState = undefined;
+            this.currentCustomMapFile = undefined;
+            this.incomingTransfers.clear();
+            this.launchDescriptor = undefined;
+            this.meshSession.leaveRoom();
             this.dispatchSnapshot();
             return;
         }
@@ -1001,11 +1022,18 @@ export class LanRoomSession {
         if (this.roomState.humanAssignments.length < 2) {
             return false;
         }
-        if (this.roomState.humanAssignments.length !== this.lastMeshSnapshot.members.length) {
-            return false;
+        const meshById = new Map(this.lastMeshSnapshot.members.map((member) => [member.id, member]));
+        // Every seated human must still be present and connected on the mesh/relay.
+        for (const assignment of this.roomState.humanAssignments) {
+            const member = meshById.get(assignment.peerId);
+            if (!member) {
+                return false;
+            }
+            if (!member.isSelf && member.status !== 'connected') {
+                return false;
+            }
         }
-        const connectedMembers = this.lastMeshSnapshot.members.filter((member) => member.isSelf || member.status === 'connected');
-        if (connectedMembers.length !== this.lastMeshSnapshot.members.length) {
+        if (this.roomState.humanAssignments.length !== this.lastMeshSnapshot.members.length) {
             return false;
         }
         if (!this.roomState.gameOpts.mapOfficial) {

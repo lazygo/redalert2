@@ -196,13 +196,39 @@ func (h *Hub) leaveRoom(c *Client, reason string) {
 		c.roomID = ""
 		return
 	}
-	empty, _, _ := room.Remove(c.id)
+
+	empty, wasHost, _ := room.Remove(c.id)
 	c.roomID = ""
 	peer := c.PeerInfo()
+
+	leftReason := reason
+	if wasHost {
+		if reason == "disconnect" {
+			leftReason = "host_disconnect"
+		} else {
+			leftReason = "host_left"
+		}
+	}
+
 	if empty {
 		h.mu.Lock()
 		delete(h.rooms, roomID)
 		h.mu.Unlock()
+	} else if wasHost {
+		// Host left/disconnected → dissolve room; everyone must leave.
+		remaining := room.DrainMembers()
+		h.mu.Lock()
+		delete(h.rooms, roomID)
+		h.mu.Unlock()
+		for _, member := range remaining {
+			member.roomID = ""
+			member.SendJSON(protocol.Envelope{
+				Type:   protocol.TypeRoomLeft,
+				RoomID: roomID,
+				Reason: leftReason,
+				Member: &peer,
+			})
+		}
 	} else {
 		info := room.Info()
 		room.Broadcast("", protocol.Envelope{
@@ -212,7 +238,8 @@ func (h *Hub) leaveRoom(c *Client, reason string) {
 			Room:   &info,
 		})
 	}
-	c.SendJSON(protocol.Envelope{Type: protocol.TypeRoomLeft, RoomID: roomID, Reason: reason})
+
+	c.SendJSON(protocol.Envelope{Type: protocol.TypeRoomLeft, RoomID: roomID, Reason: leftReason})
 	h.broadcastRoomList()
 }
 

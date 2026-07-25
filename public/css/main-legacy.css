@@ -1343,7 +1343,7 @@ input[type="range"]:focus {
     min-height: 170px;
 }
 
-/* Netplay entry: name field stays compact; public rooms panel fills the rest. */
+/* Netplay entry: compact name field; public rooms panel fills the rest without collapsing. */
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-profile-panel.lan-entry-panel {
     min-height: 0;
     flex: 0 0 auto;
@@ -1353,21 +1353,26 @@ input[type="range"]:focus {
 
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-layout {
     flex: 1 1 auto;
-    min-height: 0;
-    height: 100%;
+    min-height: 510px;
 }
 
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-recent-panel.lan-entry-panel {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 320px;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
-#ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-recent-list,
+#ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-recent-list {
+    flex: 1 1 auto;
+    min-height: 240px;
+    overflow: auto;
+}
+
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-empty-state {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 240px;
 }
 
 #ra2web-root .lan-setup-form .lan-entry-recent-panel {

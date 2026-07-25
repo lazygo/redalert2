@@ -53,6 +53,7 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
         transport.onRoomsChange.subscribe(onRooms);
         roomSession.onSnapshotChange.subscribe(onRoomSnap);
         transport.onLog.subscribe(onLog);
+        roomSession.onLog.subscribe(onLog);
         setConnected(transport.isConnected());
         setRooms(transport.getRooms());
         setRoomSnapshot(roomSession.getSnapshot());
@@ -62,6 +63,7 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
             transport.onRoomsChange.unsubscribe(onRooms);
             roomSession.onSnapshotChange.unsubscribe(onRoomSnap);
             transport.onLog.unsubscribe(onLog);
+            roomSession.onLog.unsubscribe(onLog);
         };
     }, [transport, roomSession, resetNonce]);
 
@@ -268,7 +270,17 @@ export const NetPlaySetup: React.FC<NetPlaySetupProps> = ({
                                     ? (strings.get('GUI:NetPlayYouAreHost') || '你是房主')
                                     : (strings.get('GUI:NetPlayYouAreGuest') || '你是访客')}
                                 {' · '}
-                                {roomSnapshot.members.map((m) => m.name).join(', ')}
+                                {roomSnapshot.members.map((m) => {
+                                    const readyLabel = m.isHost
+                                        ? (strings.get('GUI:NetPlayHostTag') || '房主')
+                                        : m.ready
+                                            ? (strings.get('GUI:NetPlayReady') || '准备')
+                                            : (strings.get('GUI:NetPlayNotReadyTag') || '未准备');
+                                    const connLabel = m.isConnected
+                                        ? ''
+                                        : `/${strings.get('GUI:NetPlayDisconnectedTag') || '掉线'}`;
+                                    return `${m.name}(${readyLabel}${connLabel})`;
+                                }).join(', ')}
                             </span>
                         </div>
                     </div>

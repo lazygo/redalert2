@@ -68,6 +68,9 @@ export class NetPlaySetupScreen extends MainMenuScreen {
     private previewRequestId = 0;
     private pendingCreateTitle?: string;
     private roomsPollTimer?: ReturnType<typeof setInterval>;
+    private wasRoomActive = false;
+    private leavingRoomIntentionally = false;
+    private pendingForceLeaveMessage?: string;
 
     private readonly transport = new WsRoomTransport();
     private readonly chatHistory = new ChatHistory();
@@ -162,6 +165,20 @@ export class NetPlaySetupScreen extends MainMenuScreen {
     }
 
     private handleRoomSnapshot = () => {
+        const roomSnapshot = this.roomSession.getSnapshot();
+        if (this.wasRoomActive && !roomSnapshot.isRoomActive) {
+            if (!this.leavingRoomIntentionally) {
+                this.resetLobbyLocalState();
+                this.messageBoxApi.show(
+                    this.pendingForceLeaveMessage
+                    || this.strings.get('GUI:NetPlayForceLeaveHost')
+                    || '房主已离开，房间已解散。'
+                );
+            }
+            this.pendingForceLeaveMessage = undefined;
+            this.leavingRoomIntentionally = false;
+        }
+        this.wasRoomActive = roomSnapshot.isRoomActive;
         this.refreshSidebarButtons();
         this.refreshSidebarMpText();
         void this.refreshSidebarPreview();
@@ -172,10 +189,23 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         this.refreshView();
     };
 
-    private handleConnectionChange = () => {
+    private handleConnectionChange = (connected: boolean) => {
+        if (!connected && this.wasRoomActive) {
+            this.pendingForceLeaveMessage =
+                this.strings.get('GUI:NetPlayForceLeaveDisconnect') || '与服务器断开连接，已自动离开房间。';
+            this.roomSession.leaveRoom();
+        }
         this.refreshSidebarButtons();
         this.refreshView();
     };
+
+    private resetLobbyLocalState(): void {
+        this.chatHistory.reset();
+        this.pregameController = this.createPregameController();
+        this.resetNonce += 1;
+        this.controller.setSidebarPreview();
+        this.transport.refreshRooms();
+    }
 
     private handleLaunch = (descriptor: any) => {
         this.activeMatchSession?.dispose();
@@ -361,11 +391,12 @@ export class NetPlaySetupScreen extends MainMenuScreen {
     }
 
     private async handleLeaveRoom(): Promise<void> {
+        this.leavingRoomIntentionally = true;
         this.roomSession.leaveRoom();
         this.transport.leaveRoom();
-        this.chatHistory.reset();
-        this.pregameController = this.createPregameController();
-        this.resetNonce += 1;
+        this.resetLobbyLocalState();
+        this.wasRoomActive = false;
+        this.leavingRoomIntentionally = false;
         this.refreshSidebarButtons();
         this.refreshSidebarMpText();
         this.controller.setSidebarPreview();

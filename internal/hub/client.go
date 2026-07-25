@@ -13,7 +13,7 @@ import (
 
 const (
 	writeWait      = 10 * time.Second
-	pingPeriod     = 25 * time.Second
+	pingPeriod     = 10 * time.Second // detect dead lobby peers faster
 	sendWait       = 2 * time.Second
 	maxMessageSize = 8 << 20 // 8 MiB for map chunks
 	sendBufferSize = 1024    // lockstep turns must not drop under burst
@@ -118,6 +118,8 @@ func (c *Client) writePump() {
 			err := c.conn.Write(writeCtx, websocket.MessageText, message)
 			cancel()
 			if err != nil {
+				// Unblock readPump so the peer is unregistered from the room promptly.
+				c.Close()
 				return
 			}
 		case <-ticker.C:
@@ -125,6 +127,7 @@ func (c *Client) writePump() {
 			err := c.conn.Ping(pingCtx)
 			cancel()
 			if err != nil {
+				c.Close()
 				return
 			}
 		}
