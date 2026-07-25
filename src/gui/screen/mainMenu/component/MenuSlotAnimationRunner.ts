@@ -32,6 +32,17 @@ export class MenuSlotAnimationRunner {
         this.currentAnimationType = AnimationType.SlideOut;
         this.initAnimation();
     }
+    /** Instantly finish/cancel slide without playing frames (viewport resize). */
+    snapExpanded(): void {
+        this.currentAnimationType = AnimationType.None;
+        this.collapsed = false;
+        this.animation = undefined;
+    }
+    snapCollapsed(): void {
+        this.currentAnimationType = AnimationType.None;
+        this.collapsed = true;
+        this.animation = undefined;
+    }
     private initAnimation(): void {
         const iniSection = new IniSection("");
         let animProps = new AnimProps(iniSection, new ShpFile());

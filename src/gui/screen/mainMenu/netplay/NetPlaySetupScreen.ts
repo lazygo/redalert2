@@ -148,6 +148,9 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                     maxPlayers: snap.gameOpts.maxSlots,
                 });
             }
+        } else {
+            // Canceled map selection — don't keep a half-finished create-room flow.
+            this.pendingCreateTitle = undefined;
         }
         this.refreshSidebarButtons();
         this.refreshSidebarMpText();
@@ -427,6 +430,14 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 disabled: !this.transport.isConnected(),
                 onClick: () => this.transport.refreshRooms(),
             });
+            buttons.push({
+                label: this.strings.get('GUI:Back') || '返回',
+                isBottom: true,
+                onClick: () => {
+                    this.transport.disconnect();
+                    this.controller.goToScreen(MainMenuScreenType.Home);
+                },
+            });
         } else {
             buttons.push({
                 label: this.strings.get('GUI:NetPlayStart') || '开始游戏',
@@ -459,6 +470,8 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                     },
                 });
             }
+            // Only one isBottom button — two bottoms leave an empty lit slot and
+            // "Back" used to jump Home (two levels) instead of just leaving the room.
             buttons.push({
                 label: this.strings.get('GUI:NetPlayLeave') || '离开房间',
                 isBottom: true,
@@ -468,17 +481,7 @@ export class NetPlaySetupScreen extends MainMenuScreen {
             });
         }
 
-        buttons.push({
-            label: this.strings.get('GUI:Back') || '返回',
-            isBottom: true,
-            onClick: () => {
-                void this.handleLeaveRoom();
-                this.transport.disconnect();
-                this.controller.goToScreen(MainMenuScreenType.Home);
-            },
-        });
-
-        this.controller.setSidebarButtons(buttons, true);
+        this.controller.setSidebarButtons(buttons, roomSnapshot.isRoomActive);
     }
 
     private refreshSidebarMpText(): void {

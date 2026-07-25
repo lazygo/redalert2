@@ -8,7 +8,9 @@ export class MainMenuController extends Controller {
     private sound?: any;
     private music?: any;
     private uiSoundSuppressionDepth: number = 0;
+    private sidebarAnimSuppressionDepth: number = 0;
     private rerenderQueue: Promise<void> = Promise.resolve();
+    private rerenderGeneration = 0;
     constructor(mainMenu: any, sound?: any, music?: any) {
         super();
         this.mainMenu = mainMenu;
@@ -25,8 +27,20 @@ export class MainMenuController extends Controller {
             this.uiSoundSuppressionDepth = Math.max(0, this.uiSoundSuppressionDepth - 1);
         }
     }
+    private async withSidebarAnimSuppressed(task: () => Promise<void> | void): Promise<void> {
+        this.sidebarAnimSuppressionDepth += 1;
+        try {
+            await task();
+        }
+        finally {
+            this.sidebarAnimSuppressionDepth = Math.max(0, this.sidebarAnimSuppressionDepth - 1);
+        }
+    }
     private shouldPlayUiSound(): boolean {
         return this.uiSoundSuppressionDepth === 0;
+    }
+    private shouldAnimateSidebar(): boolean {
+        return this.sidebarAnimSuppressionDepth === 0;
     }
     async goToScreenBlocking(screenType: MainMenuScreenType, params?: any): Promise<void> {
         return super.goToScreenBlocking(screenType, params);
@@ -69,20 +83,31 @@ export class MainMenuController extends Controller {
     }
     showSidebarButtons(): void {
         console.log('[MainMenuController] Showing sidebar buttons');
+        const animate = this.shouldAnimateSidebar();
         if (this.mainMenu && this.mainMenu.isSidebarCollapsed && this.mainMenu.isSidebarCollapsed()) {
-            if (this.sound && this.shouldPlayUiSound()) {
+            if (animate && this.sound && this.shouldPlayUiSound()) {
                 this.sound.play(SoundKey.GUIMoveInSound, ChannelType.Ui);
             }
             if (this.mainMenu.showButtons) {
-                this.mainMenu.showButtons();
+                this.mainMenu.showButtons(animate);
             }
+            return;
+        }
+        // Already open (e.g. silent viewport rerender) — refresh without slide-in.
+        if (this.mainMenu?.showButtons) {
+            this.mainMenu.showButtons(false);
         }
     }
     async hideSidebarButtons(): Promise<void> {
         console.log('[MainMenuController] Hiding sidebar buttons');
+        const animate = this.shouldAnimateSidebar();
         if (this.mainMenu && this.mainMenu.isSidebarCollapsed && !this.mainMenu.isSidebarCollapsed()) {
-            if (this.sound && this.shouldPlayUiSound()) {
+            if (animate && this.sound && this.shouldPlayUiSound()) {
                 this.sound.play(SoundKey.GUIMoveOutSound, ChannelType.Ui);
+            }
+            if (!animate) {
+                this.mainMenu.hideButtons(false);
+                return;
             }
             return new Promise((resolve) => {
                 if (this.mainMenu && this.mainMenu.onSidebarToggle) {
@@ -91,15 +116,18 @@ export class MainMenuController extends Controller {
                         resolve();
                     };
                     this.mainMenu.onSidebarToggle.subscribe(handler);
-                    this.mainMenu.hideButtons();
+                    this.mainMenu.hideButtons(true);
                 }
                 else {
                     if (this.mainMenu && this.mainMenu.hideButtons) {
-                        this.mainMenu.hideButtons();
+                        this.mainMenu.hideButtons(true);
                     }
                     setTimeout(resolve, 300);
                 }
             });
+        }
+        if (this.mainMenu?.hideButtons) {
+            this.mainMenu.hideButtons(false);
         }
     }
     toggleMainVideo(show: boolean): void {
@@ -155,15 +183,30 @@ export class MainMenuController extends Controller {
         const currentScreen = this.getCurrentScreen();
         const currentScreenType = this.getCurrentScreenType();
         if (currentScreen && currentScreenType !== undefined) {
+            this.rerenderGeneration += 1;
+            const generation = this.rerenderGeneration;
             this.rerenderQueue = this.rerenderQueue
                 .catch(() => undefined)
                 .then(async () => {
+                if (generation !== this.rerenderGeneration) {
+                    return;
+                }
                 if (this.getCurrentScreen() !== currentScreen || this.getCurrentScreenType() !== currentScreenType) {
                     return;
                 }
                 const rerender = async () => {
-                    await currentScreen.onLeave();
-                    await currentScreen.onEnter();
+                    const run = async () => {
+                        await currentScreen.onLeave();
+                        if (generation !== this.rerenderGeneration) {
+                            return;
+                        }
+                        await currentScreen.onEnter();
+                    };
+                    if (silent) {
+                        await this.withSidebarAnimSuppressed(run);
+                        return;
+                    }
+                    await run();
                 };
                 if (silent) {
                     await this.withUiSoundSuppressed(rerender);
