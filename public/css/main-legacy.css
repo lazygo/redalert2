@@ -1343,12 +1343,7 @@ input[type="range"]:focus {
     min-height: 170px;
 }
 
-/* Netplay entry: compact name field; rooms panel fills leftover space without overflowing. */
-#ra2web-root .lan-setup-form[data-netplay="true"][data-lan-view="entry"] {
-    min-height: 0;
-    overflow: hidden;
-}
-
+/* Netplay entry: reuse LAN height floors; only compact the name panel. */
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-setup-notice {
     flex: 0 0 auto;
     margin-bottom: 12px;
@@ -1357,33 +1352,31 @@ input[type="range"]:focus {
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-profile-panel.lan-entry-panel {
     min-height: 0;
     flex: 0 0 auto;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    padding-top: 10px;
+    padding-bottom: 10px;
 }
 
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-layout {
     flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
+    min-height: 510px;
 }
 
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-recent-panel.lan-entry-panel {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 292px;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
 }
 
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-recent-list {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 240px;
     overflow: auto;
 }
 
 #ra2web-root .lan-setup-form[data-netplay="true"] .lan-entry-empty-state {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 180px;
 }
 
 #ra2web-root .lan-setup-form .lan-entry-recent-panel {
@@ -1683,17 +1676,40 @@ input[type="range"]:focus {
     height: 110px;
 }
 
-#ra2web-root .lan-dialog-overlay {
+#ra2web-root .network-wait-overlay {
     position: fixed;
     inset: 0;
+    z-index: 120;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.65);
-    z-index: 60;
-    padding: 20px;
+    background: rgba(0, 0, 0, 0.72);
+    pointer-events: all;
+}
+
+#ra2web-root .network-wait-dialog {
+    min-width: min(420px, calc(100vw - 40px));
+    max-width: 560px;
+    padding: 22px 26px 24px;
+    border: 1px red solid;
+    background: rgba(10, 0, 0, 0.96);
+    color: #ffcc7a;
     box-sizing: border-box;
 }
+
+#ra2web-root .network-wait-dialog h3 {
+    margin: 0 0 10px;
+    color: #fff;
+    font-size: 22px;
+    font-weight: inherit;
+}
+
+#ra2web-root .network-wait-dialog p {
+    margin: 0;
+    line-height: 1.4;
+    color: #ffcc7a;
+}
+
 
 #ra2web-root .lan-dialog {
     width: min(760px, 100%);

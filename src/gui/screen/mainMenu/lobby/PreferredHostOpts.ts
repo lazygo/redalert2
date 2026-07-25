@@ -1,14 +1,14 @@
 import { GameOpts } from '@/game/gameopts/GameOpts';
 export class PreferredHostOpts {
-    gameSpeed: number = 6;
+    gameSpeed: number = 5;
     credits: number = 10000;
-    unitCount: number = 8;
+    unitCount: number = 9;
     shortGame: boolean = true;
     superWeapons: boolean = false;
     buildOffAlly: boolean = true;
     mcvRepacks: boolean = true;
-    cratesAppear: boolean = false;
-    hostTeams: boolean = false;
+    cratesAppear: boolean = true;
+    hostTeams: boolean = true;
     destroyableBridges: boolean = true;
     multiEngineer: boolean = false;
     noDogEngiKills: boolean = false;
@@ -31,7 +31,7 @@ export class PreferredHostOpts {
         ].join(';');
     }
     unserialize(data: string): this {
-        const [gameSpeed, credits, unitCount, shortGame, superWeapons, buildOffAlly, mcvRepacks, cratesAppear, slotsClosed, hostTeams = '0', destroyableBridges = '1', multiEngineer, noDogEngiKills] = data.split(';');
+        const [gameSpeed, credits, unitCount, shortGame, superWeapons, buildOffAlly, mcvRepacks, cratesAppear, slotsClosed, hostTeams = '1', destroyableBridges = '1', multiEngineer, noDogEngiKills] = data.split(';');
         this.gameSpeed = Number(gameSpeed);
         this.credits = Number(credits);
         this.unitCount = Number(unitCount);

@@ -36,7 +36,8 @@ type Envelope struct {
 	Type string `json:"type"`
 
 	// hello
-	Nickname string `json:"nickname,omitempty"`
+	Nickname     string `json:"nickname,omitempty"`
+	ResumePeerID string `json:"resumePeerId,omitempty"`
 
 	// create-room / update-room
 	Title      string `json:"title,omitempty"`
@@ -44,7 +45,7 @@ type Envelope struct {
 	MapName    string `json:"mapName,omitempty"`
 	Public     *bool  `json:"public,omitempty"`
 
-	// join-room
+	// join-room / hello resume
 	RoomID string `json:"roomId,omitempty"`
 
 	// room-send

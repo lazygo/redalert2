@@ -385,9 +385,11 @@
     "GUI:Back": "Back",
     "GUI:NetPlayConnected": "Connected to relay",
     "GUI:NetPlayDisconnected": "Not connected",
+    "GUI:NetPlayConnecting": "Connecting…",
+    "GUI:NetPlayReconnecting": "Reconnecting…",
     "GUI:NetPlayNoServer": "Netplay server not configured (config.ini → netplayWsUrl)",
     "GUI:NetPlayProfile": "Player & Connection",
-    "GUI:NetPlayProfileHint": "Enter a nickname, then use the right menu to create a room or refresh the list. Connecting to the relay starts automatically.",
+    "GUI:NetPlayProfileHint": "Enter a nickname, then use the right menu to create a room.",
     "GUI:NetPlayPlayerName": "Player name",
     "GUI:NetPlayConnect": "Connect",
     "GUI:NetPlayRefresh": "Refresh rooms",
@@ -417,5 +419,10 @@
     "GUI:NetPlayNotReadyTag": "Not ready",
     "GUI:NetPlayDisconnectedTag": "Disconnected",
     "GUI:NetPlayForceLeaveHost": "The host left. The room has been closed.",
-    "GUI:NetPlayForceLeaveDisconnect": "Disconnected from the server. You have left the room."
+    "GUI:NetPlayForceLeaveDisconnect": "Disconnected from the server. You have left the room.",
+    "GUI:NetPlayMatchWaitingPlayers": "Waiting for network",
+    "GUI:NetPlayMatchWaitingPlayersHint": "Waiting for player(s) to reconnect: %s",
+    "GUI:NetPlayMatchReconnecting": "Connection lost, reconnecting…",
+    "GUI:NetPlayMatchReconnectHint": "Keep this page open while the match connection is restored.",
+    "GUI:NetPlayMatchResumeFailed": "Could not restore the match connection. Leaving the game."
 }

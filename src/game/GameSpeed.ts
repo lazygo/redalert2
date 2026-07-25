@@ -5,7 +5,7 @@ export class GameSpeed {
      * Kept as an escape hatch if a host still wants to cap lobby speed.
      */
     static NETPLAY_MAX_SPEED = 6;
-    static NETPLAY_DEFAULT_SPEED = 6;
+    static NETPLAY_DEFAULT_SPEED = 5;
     static computeGameSpeed(speed: number): number {
         let ticksPerSecond: number;
         if (speed === 6) {

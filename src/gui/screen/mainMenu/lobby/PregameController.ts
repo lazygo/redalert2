@@ -24,6 +24,7 @@ import { PreferredHostOpts } from '@/gui/screen/mainMenu/lobby/PreferredHostOpts
 import { Parser } from '@/network/gameopt/Parser';
 import { Serializer } from '@/network/gameopt/Serializer';
 import { BotRegistry } from '@/game/ai/thirdpartbot/BotRegistry';
+import { GameSpeed } from '@/game/GameSpeed';
 
 interface Rules {
     getMultiplayerCountries(): any[];
@@ -555,7 +556,7 @@ export class PregameController {
             credits: preferredOpts.credits,
             unitCount: preferredOpts.unitCount,
             buildOffAlly: preferredOpts.buildOffAlly,
-            hostTeams: false,
+            hostTeams: preferredOpts.hostTeams,
             destroyableBridges: preferredOpts.destroyableBridges,
             multiEngineer: preferredOpts.multiEngineer,
             noDogEngiKills: preferredOpts.noDogEngiKills,
@@ -703,7 +704,7 @@ export class PregameController {
      * Earlier netplay builds forced speed ≤ 1 into prefs; restore a playable default
      * so lookahead can actually run at real-time pace.
      */
-    ensureNetplayGameSpeed(defaultSpeed: number = 6): void {
+    ensureNetplayGameSpeed(defaultSpeed: number = GameSpeed.NETPLAY_DEFAULT_SPEED): void {
         if (!this.gameOpts) {
             return;
         }

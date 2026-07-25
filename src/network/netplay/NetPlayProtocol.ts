@@ -16,7 +16,7 @@ export interface NetPlayRoomInfo {
 }
 
 export type NetPlayClientMessage =
-    | { type: 'hello'; nickname: string }
+    | { type: 'hello'; nickname: string; resumePeerId?: string; roomId?: string }
     | { type: 'list-rooms' }
     | { type: 'create-room'; title: string; maxPlayers?: number; mapName?: string; public?: boolean }
     | { type: 'join-room'; roomId: string }
@@ -32,7 +32,7 @@ export type NetPlayServerMessage =
     | { type: 'room-list'; rooms: NetPlayRoomInfo[] }
     | { type: 'room-joined'; room: NetPlayRoomInfo }
     | { type: 'room-left'; roomId?: string; reason?: string }
-    | { type: 'member-join'; member: NetPlayPeerInfo; room?: NetPlayRoomInfo }
+    | { type: 'member-join'; member: NetPlayPeerInfo; room?: NetPlayRoomInfo; reason?: string }
     | { type: 'member-leave'; member: NetPlayPeerInfo; reason?: string; room?: NetPlayRoomInfo }
     | { type: 'relay'; from: NetPlayPeerInfo; payload: unknown; roomId?: string }
     | { type: 'error'; code?: string; message?: string }

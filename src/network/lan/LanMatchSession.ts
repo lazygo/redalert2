@@ -10,8 +10,9 @@ interface LanMatchPeerIdentity {
 
 interface LanMatchSnapshotMember {
     id: string;
+    name?: string;
     isSelf: boolean;
-    status: 'self' | 'known' | 'connected' | 'connecting';
+    status: 'self' | 'known' | 'connected' | 'connecting' | 'disconnected';
 }
 
 interface LanMatchTransportSnapshot {
@@ -78,6 +79,8 @@ export interface LanMatchSnapshotState {
     controlPeerId: string;
     activePeerIds: string[];
     suspectedDropPeerIds: string[];
+    waitingReconnectPeerIds: string[];
+    localReconnecting: boolean;
     bufferedTicks: number[];
     batchPeerIdsByTick: Record<number, string[]>;
     pendingLocalTicks: number[];
@@ -85,6 +88,9 @@ export interface LanMatchSnapshotState {
     loadPercentByPeerId: Record<string, number>;
     transportMembers: LanMatchSnapshotMember[];
 }
+
+/** Wait this long for a disconnected peer to resume before DropPlayer. */
+export const MATCH_RECONNECT_GRACE_MS = 45_000;
 
 function sortAssignments(assignments: LanHumanAssignment[]): LanHumanAssignment[] {
     return assignments
@@ -136,9 +142,11 @@ export class LanMatchSession {
     private readonly assignmentByPeerId = new Map<string, LanHumanAssignment>();
     private readonly activePeerIds = new Set<string>();
     private readonly suspectedDropPeerIds = new Set<string>();
+    private readonly reconnectDeadlineByPeerId = new Map<string, number>();
     private readonly turnBatchesByTick = new Map<number, Map<string, LanMatchTurnBatch>>();
     private readonly localTurnIdByTick = new Map<number, string>();
     private readonly loadPercentByPeerId = new Map<string, number>();
+    private graceCheckTimer?: ReturnType<typeof setInterval>;
 
     private lastSnapshot: LanMatchTransportSnapshot;
     private localTurnCounter = 0;
@@ -147,6 +155,7 @@ export class LanMatchSession {
 
     public readonly onSnapshotChange = new EventDispatcher<this, LanMatchSnapshotState>();
     public readonly onActionsReceived = new EventDispatcher<this, string>();
+    public readonly onMatchResumeFailed = new EventDispatcher<this, void>();
 
     constructor(
         private readonly transport: LanMatchTransport,
@@ -164,14 +173,57 @@ export class LanMatchSession {
         this.handleAppMessage = this.handleAppMessage.bind(this);
         this.transport.onSnapshotChange.subscribe(this.handleSnapshotChange);
         this.transport.onAppMessage.subscribe(this.handleAppMessage);
+        this.graceCheckTimer = setInterval(() => this.evaluateReconnectGrace(), 1000);
+        (this.transport as { setMatchReconnect?: (enabled: boolean) => void }).setMatchReconnect?.(true);
+        const matchTransport = this.transport as {
+            onConnectionStatusChange?: {
+                subscribe(listener: (status: string) => void): void;
+                unsubscribe(listener: (status: string) => void): void;
+            };
+            onMatchResumeFailed?: {
+                subscribe(listener: () => void): void;
+                unsubscribe(listener: () => void): void;
+            };
+        };
+        this.connectionStatusDispatcher = matchTransport.onConnectionStatusChange;
+        this.resumeFailedDispatcher = matchTransport.onMatchResumeFailed;
+        this.connectionStatusDispatcher?.subscribe(this.handleTransportConnectionStatus);
+        this.resumeFailedDispatcher?.subscribe(this.handleMatchResumeFailed);
         this.handleSnapshotChange(this.lastSnapshot, this.transport);
     }
+
+    private connectionStatusDispatcher?: {
+        subscribe(listener: (status: string) => void): void;
+        unsubscribe(listener: (status: string) => void): void;
+    };
+    private resumeFailedDispatcher?: {
+        subscribe(listener: () => void): void;
+        unsubscribe(listener: () => void): void;
+    };
+
+    private handleTransportConnectionStatus = (status: string): void => {
+        if (status === 'connected') {
+            this.resendPendingLocalTurns();
+        }
+        this.dispatchSnapshot();
+    };
+
+    private handleMatchResumeFailed = (): void => {
+        this.onMatchResumeFailed.dispatch(this);
+    };
 
     dispose(): void {
         if (this.disposed) {
             return;
         }
         this.disposed = true;
+        if (this.graceCheckTimer) {
+            clearInterval(this.graceCheckTimer);
+            this.graceCheckTimer = undefined;
+        }
+        this.connectionStatusDispatcher?.unsubscribe(this.handleTransportConnectionStatus);
+        this.resumeFailedDispatcher?.unsubscribe(this.handleMatchResumeFailed);
+        (this.transport as { setMatchReconnect?: (enabled: boolean) => void }).setMatchReconnect?.(false);
         this.transport.onSnapshotChange.unsubscribe(this.handleSnapshotChange);
         this.transport.onAppMessage.unsubscribe(this.handleAppMessage);
     }
@@ -248,17 +300,35 @@ export class LanMatchSession {
             dropPeerIds,
             activePeerIds: this.getOrderedActivePeerIds(),
         });
-        this.transport.broadcastAppMessage({
-            type: 'lan-game-turn',
-            gameId: this.descriptor.gameId,
-            tick,
-            fromPeerId: localPeerId,
-            turnId,
-            actionData: uint8ArrayToBase64String(actionData),
-            dropPeerIds,
-        } satisfies LanGameTurnMessage);
+        this.broadcastLocalTurn(batch);
 
         return turnId;
+    }
+
+    private broadcastLocalTurn(batch: LanMatchTurnBatch): void {
+        try {
+            this.transport.broadcastAppMessage({
+                type: 'lan-game-turn',
+                gameId: this.descriptor.gameId,
+                tick: batch.tick,
+                fromPeerId: batch.peerId,
+                turnId: batch.turnId,
+                actionData: uint8ArrayToBase64String(batch.actionData),
+                dropPeerIds: batch.dropPeerIds,
+            } satisfies LanGameTurnMessage);
+        } catch {
+            // Connection may be down during match reconnect grace; resend on resume.
+        }
+    }
+
+    private resendPendingLocalTurns(): void {
+        const localPeerId = this.transport.getSelf().id;
+        this.localTurnIdByTick.forEach((turnId, tick) => {
+            const batch = this.turnBatchesByTick.get(tick)?.get(localPeerId);
+            if (batch && batch.turnId === turnId) {
+                this.broadcastLocalTurn(batch);
+            }
+        });
     }
 
     tryConsumeTurn(tick: number): LanResolvedTurn | undefined {
@@ -311,20 +381,57 @@ export class LanMatchSession {
 
     private handleSnapshotChange(snapshot: LanMatchTransportSnapshot, _source: unknown): void {
         this.lastSnapshot = snapshot;
+        const memberById = new Map(snapshot.members.map((member) => [member.id, member]));
         const connectedPeerIds = new Set(
             snapshot.members
-                .filter((member) => member.isSelf || member.status === 'connected')
+                .filter((member) => member.isSelf || member.status === 'connected' || member.status === 'self')
                 .map((member) => member.id)
         );
 
+        const now = Date.now();
         this.getOrderedActivePeerIds().forEach((peerId) => {
-            if (!connectedPeerIds.has(peerId)) {
-                this.suspectedDropPeerIds.add(peerId);
+            if (connectedPeerIds.has(peerId)) {
+                this.reconnectDeadlineByPeerId.delete(peerId);
+                return;
             }
+            if (this.suspectedDropPeerIds.has(peerId)) {
+                return;
+            }
+            const member = memberById.get(peerId);
+            // Explicit temporary disconnect keeps a grace window; missing members are final.
+            if (member?.status === 'disconnected') {
+                if (!this.reconnectDeadlineByPeerId.has(peerId)) {
+                    this.reconnectDeadlineByPeerId.set(peerId, now + MATCH_RECONNECT_GRACE_MS);
+                }
+                return;
+            }
+            this.suspectedDropPeerIds.add(peerId);
+            this.reconnectDeadlineByPeerId.delete(peerId);
         });
 
+        this.evaluateReconnectGrace();
         this.refreshLocalControlTurns();
         this.dispatchSnapshot();
+    }
+
+    private evaluateReconnectGrace(): void {
+        if (this.disposed) {
+            return;
+        }
+        const now = Date.now();
+        let changed = false;
+        this.reconnectDeadlineByPeerId.forEach((deadline, peerId) => {
+            if (now < deadline || this.suspectedDropPeerIds.has(peerId)) {
+                return;
+            }
+            this.suspectedDropPeerIds.add(peerId);
+            this.reconnectDeadlineByPeerId.delete(peerId);
+            changed = true;
+        });
+        if (changed) {
+            this.refreshLocalControlTurns();
+            this.dispatchSnapshot();
+        }
     }
 
     private handleAppMessage(entry: LanMeshAppMessage, _source: unknown): void {
@@ -393,6 +500,7 @@ export class LanMatchSession {
 
         tickBatches.set(batch.peerId, cloneBatch(batch));
         this.suspectedDropPeerIds.delete(batch.peerId);
+        this.reconnectDeadlineByPeerId.delete(batch.peerId);
         this.dispatchSnapshot();
     }
 
@@ -421,15 +529,7 @@ export class LanMatchSession {
                 turnId,
                 dropPeerIds: updatedBatch.dropPeerIds,
             });
-            this.transport.broadcastAppMessage({
-                type: 'lan-game-turn',
-                gameId: this.descriptor.gameId,
-                tick,
-                fromPeerId: localPeerId,
-                turnId,
-                actionData: uint8ArrayToBase64String(updatedBatch.actionData),
-                dropPeerIds: updatedBatch.dropPeerIds,
-            } satisfies LanGameTurnMessage);
+            this.broadcastLocalTurn(updatedBatch);
         });
     }
 
@@ -441,6 +541,7 @@ export class LanMatchSession {
         dropPeerIds.forEach((peerId) => {
             this.activePeerIds.delete(peerId);
             this.suspectedDropPeerIds.delete(peerId);
+            this.reconnectDeadlineByPeerId.delete(peerId);
         });
 
         Array.from(this.turnBatchesByTick.entries()).forEach(([tick, tickBatches]) => {
@@ -487,6 +588,9 @@ export class LanMatchSession {
             controlPeerId: this.getControlPeerId(),
             activePeerIds: orderedActivePeerIds,
             suspectedDropPeerIds: this.getSortedPeerIds(this.suspectedDropPeerIds),
+            waitingReconnectPeerIds: this.getSortedPeerIds(new Set(this.reconnectDeadlineByPeerId.keys())),
+            localReconnecting:
+                (this.transport as { getConnectionStatus?: () => string }).getConnectionStatus?.() === 'reconnecting',
             bufferedTicks: Array.from(this.turnBatchesByTick.keys()).sort((left, right) => left - right),
             batchPeerIdsByTick,
             pendingLocalTicks: Array.from(this.localTurnIdByTick.keys()).sort((left, right) => left - right),

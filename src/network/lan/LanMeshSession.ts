@@ -85,7 +85,7 @@ interface ActiveQrPayload {
 export interface LanMemberSnapshot extends LanPeerIdentity {
     isSelf: boolean;
     isDirect: boolean;
-    status: 'self' | 'known' | 'connected' | 'connecting';
+    status: 'self' | 'known' | 'connected' | 'connecting' | 'disconnected';
 }
 
 export interface LanMeshSnapshot {

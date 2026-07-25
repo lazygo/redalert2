@@ -18,6 +18,7 @@ export class MpDialogSettings {
     public mustAlly?: boolean;
     public bridgeDestruction?: boolean;
     public multiEngineer?: boolean;
+    public noDogEngiKills?: boolean;
     private readOptionalNumber(section: IniSection, key: string): number | undefined {
         return section.has(key) ? section.getNumber(key) : undefined;
     }
@@ -43,6 +44,7 @@ export class MpDialogSettings {
         this.mustAlly = this.readOptionalBool(section, "MustAlly");
         this.bridgeDestruction = this.readOptionalBool(section, "BridgeDestruction", true);
         this.multiEngineer = this.readOptionalBool(section, "MultiEngineer");
+        this.noDogEngiKills = this.readOptionalBool(section, "NoDogEngiKills");
         return this;
     }
 }

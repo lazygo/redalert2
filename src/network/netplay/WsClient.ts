@@ -22,10 +22,10 @@ export class WsClient {
     }
 
     connect(url: string): Promise<void> {
-        this.intentionalClose = false;
         if (this.socket) {
             this.disconnect();
         }
+        this.intentionalClose = false;
         this.setStatus('connecting');
         return new Promise((resolve, reject) => {
             let settled = false;
