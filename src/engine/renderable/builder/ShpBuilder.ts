@@ -49,6 +49,8 @@ export class ShpBuilder {
         ShpBuilder.textureCache.clear();
         ShpBuilder.geometryCache.forEach((cache) => cache.forEach((geometry) => geometry.dispose()));
         ShpBuilder.geometryCache.clear();
+        ShpBuilder.materialCache.forEach((cached) => cached.material.dispose());
+        ShpBuilder.materialCache.clear();
     }
     constructor(shpFile, palette, camera, scale = 1, depth = false, depthOffset = 0) {
         this.scale = scale;

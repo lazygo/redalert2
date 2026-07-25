@@ -2,34 +2,56 @@ import { DataStream } from "./DataStream";
 import { VirtualFile } from "./vfs/VirtualFile";
 import type { IdxFile } from "./IdxFile";
 import type { IdxEntry } from "./IdxEntry";
+
+/**
+ * audio.bag archive. Entries are resolved by idx offset into the shared bag
+ * buffer; WAV headers are built lazily on first open instead of copying every
+ * sample up-front.
+ */
 export class AudioBagFile {
-    private fileData: Map<string, DataStream>;
-    constructor() {
-        this.fileData = new Map<string, DataStream>();
-    }
+    private bagBuffer?: ArrayBuffer;
+    private bagByteOffset = 0;
+    private readonly entries = new Map<string, IdxEntry>();
+    /** Lazily materialized full WAV streams (header + sample bytes). */
+    private readonly materialized = new Map<string, DataStream>();
+
     public async fromVirtualFile(bagFile: VirtualFile, idx: IdxFile): Promise<this> {
+        this.bagBuffer = bagFile.stream.buffer;
+        this.bagByteOffset = bagFile.stream.byteOffset;
+        this.entries.clear();
+        this.materialized.clear();
         for (const [filename, entry] of idx.entries) {
-            const wavDataStream = this.buildWavData(bagFile.stream, entry);
-            wavDataStream.dynamicSize = false;
-            this.fileData.set(filename, wavDataStream);
+            this.entries.set(filename, entry);
         }
         return this;
     }
+
     public getFileList(): string[] {
-        return [...this.fileData.keys()];
+        return [...this.entries.keys()];
     }
+
     public containsFile(filename: string): boolean {
-        return this.fileData.has(filename);
+        return this.entries.has(filename);
     }
+
     public openFile(filename: string): VirtualFile {
         if (!this.containsFile(filename)) {
             throw new Error(`File "${filename}" not found in AudioBagFile`);
         }
-        const dataStream = this.fileData.get(filename)!;
+        let dataStream = this.materialized.get(filename);
+        if (!dataStream) {
+            dataStream = this.buildWavData(this.entries.get(filename)!);
+            dataStream.dynamicSize = false;
+            this.materialized.set(filename, dataStream);
+        }
         dataStream.seek(0);
         return new VirtualFile(dataStream, filename);
     }
-    private buildWavData(sourceStream: DataStream, idxEntry: IdxEntry): DataStream {
+
+    private buildWavData(idxEntry: IdxEntry): DataStream {
+        if (!this.bagBuffer) {
+            throw new Error("AudioBagFile: bag buffer not loaded");
+        }
         const outStream = new DataStream();
         outStream.littleEndian();
         const channels = (idxEntry.flags & 0x01) > 0 ? 2 : 1;
@@ -78,8 +100,12 @@ export class AudioBagFile {
         else {
             console.warn(`AudioBagFile: Unknown flags ${idxEntry.flags} for WAV header generation for entry referencing offset ${idxEntry.offset}.`);
         }
-        sourceStream.seek(idxEntry.offset);
-        const audioData = sourceStream.readUint8Array(idxEntry.length);
+        // View into the shared bag — only copied into the WAV stream when this entry is first opened.
+        const audioData = new Uint8Array(
+            this.bagBuffer,
+            this.bagByteOffset + idxEntry.offset,
+            idxEntry.length,
+        );
         outStream.writeUint8Array(audioData);
         for (let i = 0; i < paddingBytes; i++) {
             outStream.writeUint8(0);

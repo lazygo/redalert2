@@ -15,6 +15,7 @@ function createAtlasBitmap(blocks: any[], width: number, height: number, imageRe
     });
     return atlasBitmap;
 }
+/** Palette index in alpha (RGBA). Matches paletteShaderLib default path (sampledDiffuseColor.a). */
 function createAtlasRgbaData(bitmap: IndexedBitmap): Uint8Array {
     const rgbaData = new Uint8Array(bitmap.width * bitmap.height * 4);
     for (let i = 0; i < bitmap.data.length; i++) {

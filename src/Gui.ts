@@ -5,6 +5,7 @@ import { BoxedVar } from './util/BoxedVar.js';
 import { RootController } from './gui/screen/RootController.js';
 import { ScreenType, MainMenuScreenType } from './gui/screen/ScreenType.js';
 import { MainMenuRootScreen } from './gui/screen/mainMenu/MainMenuRootScreen.js';
+import { loadMainMenuVideoSrc } from './gui/screen/mainMenu/loadMainMenuVideo.js';
 import { HomeScreen } from './gui/screen/mainMenu/main/HomeScreen.js';
 import { LanSetupScreen } from './gui/screen/mainMenu/lan/LanSetupScreen.js';
 import { NetPlaySetupScreen } from './gui/screen/mainMenu/netplay/NetPlaySetupScreen.js';
@@ -184,83 +185,8 @@ export class Gui {
             }
         }
     }
-    private async getMainMenuVideoUrl(): Promise<string | File | undefined> {
-        console.log('[Gui] Getting main menu video URL');
-        const videoFileName = Engine.rfsSettings.menuVideoFileName;
-        console.log('[Gui] Video file name:', videoFileName);
-        try {
-            if (Engine.rfs) {
-                console.log('[Gui] Checking RFS for video file...');
-                try {
-                    const rfsContainsVideo = await Engine.rfs.containsEntry(videoFileName);
-                    console.log(`[Gui] RFS contains ${videoFileName}:`, rfsContainsVideo);
-                    if (rfsContainsVideo) {
-                        console.log('[Gui] Found video file in RFS:', videoFileName);
-                        const fileData = await Engine.rfs.getRawFile(videoFileName);
-                        const videoFile = new File([fileData], videoFileName, { type: "video/webm" });
-                        console.log('[Gui] Created video File object from RFS:', videoFile.name, videoFile.size, 'bytes');
-                        if (videoFile.size === 0) {
-                            console.warn('[Gui] Video file from RFS is empty!');
-                        }
-                        else {
-                            return videoFile;
-                        }
-                    }
-                }
-                catch (error) {
-                    console.warn('[Gui] Error checking RFS for video file:', error);
-                }
-            }
-            else {
-                console.warn('[Gui] Engine.rfs not available');
-            }
-            if (!Engine.vfs) {
-                console.warn('[Gui] Engine.vfs not available - cannot load video');
-                return undefined;
-            }
-            console.log('[Gui] Checking if video file exists in VFS...');
-            console.log('[Gui] Available archives:', Engine.vfs.listArchives());
-            console.log(`[Gui] Checking for video file: ${videoFileName}`);
-            console.log(`[Gui] VFS fileExists result:`, Engine.vfs.fileExists(videoFileName));
-            if (Engine.vfs.fileExists(videoFileName)) {
-                console.log('[Gui] Found video file in VFS:', videoFileName);
-                const fileData = Engine.vfs.openFile(videoFileName).asFile();
-                const videoFile = new File([fileData], videoFileName, { type: "video/webm" });
-                console.log('[Gui] Created video File object:', videoFile.name, videoFile.size, 'bytes');
-                if (videoFile.size === 0) {
-                    console.warn('[Gui] Video file is empty!');
-                    return undefined;
-                }
-                return videoFile;
-            }
-            else {
-                console.warn('[Gui] Video file not found in VFS:', videoFileName);
-                const alternativeNames = ['ra2ts_l.bik', 'ra2ts_l.mp4', 'menu.webm', 'menu.mp4', 'ra2ts_l.avi'];
-                for (const altName of alternativeNames) {
-                    console.log(`[Gui] Checking alternative video file: ${altName}`);
-                    if (Engine.vfs.fileExists(altName)) {
-                        console.log('[Gui] Found alternative video file:', altName);
-                        if (altName.endsWith('.bik')) {
-                            console.warn(`[Gui] Found .bik file but cannot play directly: ${altName}`);
-                            console.warn('[Gui] .bik files need to be converted to .webm during import process');
-                            continue;
-                        }
-                        const fileData = Engine.vfs.openFile(altName).asFile();
-                        const videoFile = new File([fileData], altName, {
-                            type: altName.endsWith('.mp4') ? "video/mp4" : "video/webm"
-                        });
-                        console.log('[Gui] Created alternative video File object:', videoFile.name, videoFile.size, 'bytes');
-                        return videoFile;
-                    }
-                }
-                console.warn('[Gui] No playable video file found, will proceed without video');
-                return undefined;
-            }
-        }
-        catch (error) {
-            console.error('[Gui] Failed to read video file from VFS:', error);
-            return undefined;
-        }
+    private async getMainMenuVideoUrl(): Promise<string | undefined> {
+        return loadMainMenuVideoSrc();
     }
     private async routeToInitialScreen(): Promise<void> {
         console.log('[Gui] Routing to initial screen');

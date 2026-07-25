@@ -10,6 +10,7 @@ import { LazyResourceCollection } from '../../../engine/LazyResourceCollection';
 import { MessageBoxApi } from '../../component/MessageBoxApi';
 import { Config } from '../../../Config';
 import { browserFileSystemAccess } from '../../../engine/gameRes/browserFileSystemAccess';
+import { loadMainMenuVideoSrc, releaseMainMenuVideoSrc } from './loadMainMenuVideo';
 export interface UiScene {
     menuViewport: {
         x: number;
@@ -34,6 +35,8 @@ export class MainMenuRootScreen extends RootScreen {
     private jsxRenderer: JsxRenderer;
     private messageBoxApi: MessageBoxApi;
     private videoSrc?: string | File;
+    /** True after we own a blob: URL that must be revoked on leave. */
+    private ownsVideoBlob = false;
     private sound?: any;
     private music?: any;
     private appVersion: string;
@@ -57,6 +60,7 @@ export class MainMenuRootScreen extends RootScreen {
         this.appVersion = appVersion;
         this.config = config;
         this.videoSrc = videoSrc;
+        this.ownsVideoBlob = typeof videoSrc === 'string' && videoSrc.startsWith('blob:');
         this.sound = sound;
         this.music = music;
         this.generalOptions = generalOptions;
@@ -101,6 +105,10 @@ export class MainMenuRootScreen extends RootScreen {
     }
     async onEnter(params?: any): Promise<void> {
         console.log('[MainMenuRootScreen] Entering main menu root screen');
+        if (!this.videoSrc) {
+            this.videoSrc = await loadMainMenuVideoSrc();
+            this.ownsVideoBlob = typeof this.videoSrc === 'string' && this.videoSrc.startsWith('blob:');
+        }
         const controller = this.createViewAndController();
         if (!this.subScreens.has(MainMenuScreenType.Score)) {
             this.subScreens.set(MainMenuScreenType.Score, ScoreScreen as any);
@@ -284,6 +292,12 @@ export class MainMenuRootScreen extends RootScreen {
             this.mainMenu.destroy();
             this.mainMenu = undefined;
         }
+        // Drop menu video bytes while in-game; reloaded on next onEnter.
+        if (this.ownsVideoBlob) {
+            releaseMainMenuVideoSrc(this.videoSrc);
+        }
+        this.videoSrc = undefined;
+        this.ownsVideoBlob = false;
     }
     update(deltaTime: number): void {
         if (this.mainMenuCtrl) {

@@ -35,7 +35,7 @@ export class GraphicsOptions {
     }
     applyLowPreset(): void {
         this.models.value = ModelQuality.Low;
-        this.shadows.value = ShadowQuality.Low;
+        this.shadows.value = ShadowQuality.Off;
     }
     applyHighPreset(): void {
         this.models.value = ModelQuality.High;

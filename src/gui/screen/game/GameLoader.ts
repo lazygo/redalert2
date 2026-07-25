@@ -20,7 +20,6 @@ import { BuildingShpHelper } from '@/engine/renderable/entity/building/BuildingS
 import { BuildingAnimArtProps } from '@/engine/renderable/entity/building/BuildingAnimArtProps';
 import { isBetween } from '@/util/math';
 import { MixFile } from '@/data/MixFile';
-import { isIpad } from '@/util/userAgent';
 import { GameOptRandomGen } from '@/game/gameopts/GameOptRandomGen';
 import { DebugRenderable } from '@/engine/renderable/DebugRenderable';
 import { MixinRules } from '@/game/ini/MixinRules';
@@ -109,26 +108,9 @@ export class GameLoader {
         }
         loadingScreenApi.onLoadProgress(45);
         await sleep(1);
-        const isMobile = /iPhone|Android|CrOS|Windows Phone|webOS/i.test(navigator.userAgent) || isIpad();
-        if (!isMobile) {
-            console.time('Load sounds');
-            await this.prepareSounds(cancellationToken, (percent) => loadingScreenApi.onLoadProgress(45 + (percent / 100) * 15));
-            console.timeEnd('Load sounds');
-        }
-        loadingScreenApi.onLoadProgress(60);
-        await sleep(1);
-        if (!isMobile) {
-            const images = Engine.getImages();
-            const imageFinder = new ImageFinder(images as any, theater);
-            console.time('Load textures');
-            await this.prepareTextures(game.rules, game.art, mapFile, imageFinder, cancellationToken, (percent) => loadingScreenApi.onLoadProgress(60 + (percent / 100) * 10));
-            console.timeEnd('Load textures');
-        }
+        // Sounds / SHP atlases / VXL meshes are built on first use — prewarming
+        // every asset doubles peak RAM for no visual gain.
         loadingScreenApi.onLoadProgress(70);
-        await sleep(1);
-        console.time('Load voxels');
-        await this.prepareVxlGeometries(game.rules, game.art, game.map, Engine.getVoxels(), cancellationToken, (percent) => loadingScreenApi.onLoadProgress(70 + (percent / 100) * 20));
-        console.timeEnd('Load voxels');
         await sleep(1);
         cancellationToken?.throwIfCancelled();
         IsoCoords.init({
