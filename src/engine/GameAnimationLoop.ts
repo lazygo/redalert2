@@ -15,6 +15,7 @@ interface Renderer {
 interface Sound {
     audioSystem: {
         setMuted(muted: boolean): void;
+        ensureResumed?(): Promise<boolean>;
     };
 }
 interface GameTurnManager {
@@ -115,6 +116,8 @@ export class GameAnimationLoop {
             if (!this.paused) {
                 this.startTime = undefined;
                 this.lastGameFrame = 0;
+                // Tab focus alone may not unlock AudioContext; still try, and unmute.
+                void this.sound.audioSystem.ensureResumed?.();
             }
             if (this.localPlayer && !this.localPlayer.isObserver) {
                 try {

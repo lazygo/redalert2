@@ -414,5 +414,6 @@
     "GUI:NetPlayMatchReconnecting": "正在重新连接…",
     "GUI:NetPlayMatchReconnectHint": "请保持页面打开，正在尝试恢复对局连接。",
     "GUI:NetPlayMatchResumeFailed": "无法恢复对局连接，即将退出。",
-    "GUI:NetPlayKick": "踢出"
+    "GUI:NetPlayKick": "踢出",
+    "GUI:NetPlayResponse": "响应"
 }

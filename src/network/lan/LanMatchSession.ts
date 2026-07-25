@@ -95,6 +95,11 @@ export interface LanMatchSnapshotState {
     waitingReconnectPeerIds: string[];
     /** 0–100 remaining grace for peers currently waiting to reconnect. */
     reconnectRemainPercentByPeerId: Record<string, number>;
+    /**
+     * How long since we last got a lockstep turn from each peer (ms).
+     * Reflects relay latency and/or a slow machine holding the sim.
+     */
+    responseLagMsByPeerId: Record<string, number>;
     localReconnecting: boolean;
     bufferedTicks: number[];
     batchPeerIdsByTick: Record<number, string[]>;
@@ -174,6 +179,7 @@ export class LanMatchSession {
     private readonly resolvedLocalTurnArchive = new Map<number, LanMatchTurnBatch>();
     private readonly localTurnIdByTick = new Map<number, string>();
     private readonly loadPercentByPeerId = new Map<string, number>();
+    private readonly lastTurnAtByPeerId = new Map<string, number>();
     private graceCheckTimer?: ReturnType<typeof setInterval>;
 
     private lastSnapshot: LanMatchTransportSnapshot;
@@ -195,6 +201,7 @@ export class LanMatchSession {
             this.assignmentByPeerId.set(assignment.peerId, { ...assignment });
             this.activePeerIds.add(assignment.peerId);
             this.loadPercentByPeerId.set(assignment.peerId, 0);
+            this.lastTurnAtByPeerId.set(assignment.peerId, Date.now());
         });
         this.lastSnapshot = this.transport.getSnapshot();
         this.handleSnapshotChange = this.handleSnapshotChange.bind(this);
@@ -319,10 +326,9 @@ export class LanMatchSession {
     }
 
     /**
-     * Control peer (effective host for lockstep drops) can immediately end reconnect
-     * wait for lagging/disconnected peers and schedule DropPlayer on the next resolved turn.
+     * Control peer can schedule DropPlayer for any other active peer (lag / AFK / reconnect).
      */
-    forceDropWaitingPeers(peerIds: string[]): boolean {
+    forceDropPeers(peerIds: string[]): boolean {
         if (this.disposed || !peerIds.length) {
             return false;
         }
@@ -330,12 +336,9 @@ export class LanMatchSession {
         if (this.getControlPeerId() !== localPeerId) {
             return false;
         }
-        const targets = [...new Set(peerIds)].filter((peerId) => {
-            if (peerId === localPeerId || !this.activePeerIds.has(peerId)) {
-                return false;
-            }
-            return this.reconnectDeadlineByPeerId.has(peerId) || this.suspectedDropPeerIds.has(peerId);
-        });
+        const targets = [...new Set(peerIds)].filter(
+            (peerId) => peerId !== localPeerId && this.activePeerIds.has(peerId)
+        );
         if (!targets.length) {
             return false;
         }
@@ -351,6 +354,11 @@ export class LanMatchSession {
             // Local drop still applies; peers catch up when control turns refresh.
         }
         return true;
+    }
+
+    /** @deprecated Prefer forceDropPeers — kept for reconnect-wait kick UI. */
+    forceDropWaitingPeers(peerIds: string[]): boolean {
+        return this.forceDropPeers(peerIds);
     }
 
     isLocalControlPeer(): boolean {
@@ -802,6 +810,7 @@ export class LanMatchSession {
         }
 
         tickBatches.set(batch.peerId, cloneBatch(batch));
+        this.lastTurnAtByPeerId.set(batch.peerId, Date.now());
         this.suspectedDropPeerIds.delete(batch.peerId);
         this.reconnectDeadlineByPeerId.delete(batch.peerId);
         this.dispatchSnapshot();
@@ -910,6 +919,13 @@ export class LanMatchSession {
         const waitingIds = new Set(this.reconnectDeadlineByPeerId.keys());
         const localReconnecting = this.isLocalReconnecting();
         const reconnectRemainPercentByPeerId: Record<string, number> = {};
+        const responseLagMsByPeerId: Record<string, number> = {};
+        const stallAgeMs = this.stallStartedAt !== undefined
+            ? Math.max(0, now - this.stallStartedAt)
+            : 0;
+        const missingForStall = this.stallTick !== undefined
+            ? new Set(this.getMissingPeerIdsForTick(this.stallTick))
+            : new Set<string>();
         this.orderedAssignments.forEach((assignment) => {
             if (waitingIds.has(assignment.peerId)) {
                 reconnectRemainPercentByPeerId[assignment.peerId] = this.getReconnectRemainPercent(assignment.peerId, now);
@@ -921,6 +937,15 @@ export class LanMatchSession {
             } else {
                 reconnectRemainPercentByPeerId[assignment.peerId] = 100;
             }
+
+            const lastTurnAt = this.lastTurnAtByPeerId.get(assignment.peerId) ?? now;
+            let lagMs = Math.max(0, now - lastTurnAt);
+            if (waitingIds.has(assignment.peerId) || this.suspectedDropPeerIds.has(assignment.peerId)) {
+                lagMs = Math.max(lagMs, stallAgeMs, 1000);
+            } else if (missingForStall.has(assignment.peerId)) {
+                lagMs = Math.max(lagMs, stallAgeMs);
+            }
+            responseLagMsByPeerId[assignment.peerId] = Math.min(10_000, Math.round(lagMs));
         });
         return {
             gameId: this.descriptor.gameId,
@@ -930,6 +955,7 @@ export class LanMatchSession {
             suspectedDropPeerIds: this.getSortedPeerIds(this.suspectedDropPeerIds),
             waitingReconnectPeerIds: this.getSortedPeerIds(waitingIds),
             reconnectRemainPercentByPeerId,
+            responseLagMsByPeerId,
             localReconnecting,
             bufferedTicks: Array.from(this.turnBatchesByTick.keys()).sort((left, right) => left - right),
             batchPeerIdsByTick,
