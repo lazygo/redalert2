@@ -39,6 +39,7 @@ interface ConInfo {
     name: string;
     status: string;
     ping?: number;
+    responseMs?: number;
 }
 interface GameMode {
     label: string;
@@ -79,21 +80,75 @@ interface DiploFormProps {
     messages?: any[];
     chatHistory?: ChatHistory;
     conInfos?: ConInfo[];
+    canKickPlayers?: boolean;
     onToggleTaunts: (enabled: boolean) => void;
     onToggleAlliance: (player: Player, enabled: boolean) => void;
     onToggleChat: (player: Player, enabled: boolean) => void;
     onSendMessage: (message: string) => void;
     onCancelMessage: () => void;
+    onKickPlayer?: (player: Player) => void;
 }
 const PlayerConnectionStatus = {
     Connected: 'Connected',
     Disconnected: 'Disconnected',
     Lagging: 'Lagging'
 };
-export const DiploForm: React.FC<DiploFormProps> = ({ strings, playerInfos, localPlayer, taunts, singlePlayer, alliancesAllowed, gameModes, gameOpts, mapName, messages, chatHistory, conInfos, onToggleTaunts, onToggleAlliance, onToggleChat, onSendMessage, onCancelMessage, }) => {
+const RESPONSE_METER_MAX_MS = 1000;
+function getResponseMs(conInfo?: ConInfo): number | undefined {
+    if (!conInfo) {
+        return undefined;
+    }
+    if (conInfo.responseMs !== undefined) {
+        return conInfo.responseMs;
+    }
+    if (conInfo.status === PlayerConnectionStatus.Disconnected) {
+        return RESPONSE_METER_MAX_MS;
+    }
+    return conInfo.ping;
+}
+function ResponseCell({ ms, strings }: { ms?: number; strings: Strings }) {
+    if (ms === undefined) {
+        return null;
+    }
+    const capped = Math.min(RESPONSE_METER_MAX_MS, Math.max(0, ms));
+    const label = ms >= RESPONSE_METER_MAX_MS ? `${RESPONSE_METER_MAX_MS}+ms` : `${Math.round(ms)}ms`;
+    return (
+        <div className="player-response-cell player-ping" title={strings.get("Msg:PingInfo", Math.round(ms))}>
+            <meter value={capped} max={RESPONSE_METER_MAX_MS} low={150} high={500} optimum={0}/>
+            <span className="player-response-ms">{label}</span>
+        </div>
+    );
+}
+export const DiploForm: React.FC<DiploFormProps> = ({
+    strings,
+    playerInfos,
+    localPlayer,
+    taunts,
+    singlePlayer,
+    alliancesAllowed,
+    gameModes,
+    gameOpts,
+    mapName,
+    messages,
+    chatHistory,
+    conInfos,
+    canKickPlayers,
+    onToggleTaunts,
+    onToggleAlliance,
+    onToggleChat,
+    onSendMessage,
+    onCancelMessage,
+    onKickPlayer,
+}) => {
     const gameTypeLabel = strings.get(gameModes.getById(gameOpts.gameMode).label);
     const formatBoolean = (value: boolean): string => value ? strings.get("TXT_ON") : strings.get("TXT_OFF");
-    const localPlayerPing = conInfos?.find((info) => info.name === localPlayer?.name)?.ping;
+    const showResponse = !singlePlayer && conInfos !== undefined;
+    const showKick = Boolean(canKickPlayers && onKickPlayer);
+    const kickLabel = strings.get("GUI:NetPlayKick") || "Kick";
+    const localConInfo = conInfos?.find((info) => info.name === localPlayer?.name);
+    // Classic WOL ping icons stay in the early column; LAN response uses responseMs after kills.
+    const localPlayerPing = localConInfo?.ping;
+    const localResponseMs = getResponseMs(localConInfo);
     return (<div className="diplo-form">
       <div className="players">
         <table>
@@ -105,6 +160,8 @@ export const DiploForm: React.FC<DiploFormProps> = ({ strings, playerInfos, loca
               <th>{strings.get("GUI:Allies")}</th>
               {!singlePlayer && <th>{strings.get("GUI:Chat")}</th>}
               <th>{strings.get("GUI:Kills")}</th>
+              {showResponse && <th className="player-response">{strings.get("GUI:NetPlayResponse")}</th>}
+              {showKick && <th className="player-kick">{strings.get("GUI:NetPlayKick")}</th>}
             </tr>
           </thead>
           <tbody>
@@ -129,16 +186,28 @@ export const DiploForm: React.FC<DiploFormProps> = ({ strings, playerInfos, loca
                 ? localPlayer.getUnitsKilled()
                 : undefined}
                 </td>
+                {showResponse && (
+                  <td className="player-response">
+                    <ResponseCell ms={localResponseMs} strings={strings}/>
+                  </td>
+                )}
+                {showKick && <td className="player-kick"></td>}
               </tr>)}
             {playerInfos.map((playerInfo, index) => {
             const conInfo = conInfos?.find((info) => info.name === playerInfo.player.name);
             const ping = conInfo?.status === PlayerConnectionStatus.Connected
+                || conInfo?.status === PlayerConnectionStatus.Lagging
                 ? conInfo.ping
                 : undefined;
+            const responseMs = getResponseMs(conInfo);
+            const canKickThis = showKick
+                && !playerInfo.player.isAi
+                && playerInfo.player.name !== localPlayer?.name;
             return (<tr key={index} style={{
                     color: playerInfo.player.defeated
                         ? "grey"
                         : playerInfo.player.color.asHexString(),
+                    opacity: conInfo && conInfo.status === PlayerConnectionStatus.Disconnected ? 0.55 : 1,
                 }}>
                   <td className="player-country">
                     <CountryIcon country={playerInfo.player.country
@@ -172,6 +241,30 @@ export const DiploForm: React.FC<DiploFormProps> = ({ strings, playerInfos, loca
                     ? playerInfo.player.getUnitsKilled()
                     : undefined}
                   </td>
+                  {showResponse && (
+                    <td className="player-response">
+                      {!playerInfo.player.isAi && (
+                        <ResponseCell ms={responseMs} strings={strings}/>
+                      )}
+                    </td>
+                  )}
+                  {showKick && (
+                    <td className="player-kick">
+                      {canKickThis && (
+                        <button
+                          type="button"
+                          className="player-kick-btn"
+                          onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onKickPlayer?.(playerInfo.player);
+                          }}
+                        >
+                          {kickLabel}
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>);
         })}
           </tbody>

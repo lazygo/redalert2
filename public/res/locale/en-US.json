@@ -425,5 +425,6 @@
     "GUI:NetPlayMatchReconnecting": "Reconnecting…",
     "GUI:NetPlayMatchReconnectHint": "Keep this page open while the match connection is restored.",
     "GUI:NetPlayMatchResumeFailed": "Could not restore the match connection. Leaving the game.",
-    "GUI:NetPlayKick": "Kick"
+    "GUI:NetPlayKick": "Kick",
+    "GUI:NetPlayResponse": "Response"
 }

@@ -29,7 +29,7 @@ export class GameMenu {
     get onSendMessage() {
         return this._onSendMessage.asEvent();
     }
-    constructor(private screens: Map<number, any>, private game: any, private localPlayer: any, private chatHistory: any, private gservCon?: any, private isSinglePlayer: boolean = false, private isTournament: boolean = false) { }
+    constructor(private screens: Map<number, any>, private game: any, private localPlayer: any, private chatHistory: any, private gservCon?: any, private isSinglePlayer: boolean = false, private isTournament: boolean = false, private lanMatchSession?: any) { }
     init(hud: any): void {
         const controller = this.controller = new GameMenuController(hud);
         for (const [screenType, screen] of this.screens) {
@@ -81,10 +81,23 @@ export class GameMenu {
             isSinglePlayer: this.isSinglePlayer,
             chatHistory: this.chatHistory,
             gservCon: this.gservCon,
+            lanMatchSession: this.lanMatchSession,
             onToggleAlliance: (player: any, enabled: boolean) => {
                 this._onToggleAlliance.dispatch(player, enabled);
             },
             onSendMessage: (message: any) => this._onSendMessage.dispatch(this, message),
+            onKickPlayer: (player: any) => {
+                const session = this.lanMatchSession;
+                if (!session?.forceDropPeers || !session.getLaunchDescriptor) {
+                    return;
+                }
+                const assignment = session.getLaunchDescriptor().humanAssignments
+                    ?.find((entry: any) => entry.name === player.name);
+                if (!assignment?.peerId) {
+                    return;
+                }
+                session.forceDropPeers([assignment.peerId]);
+            },
             onCancel: () => {
                 this.controller!.close();
                 this._onCancel.dispatch(this);

@@ -747,6 +747,8 @@ export class GameScreen extends RootScreen {
             // Restore in-game cursor (same as onGameStart); lock may wait for a click.
             this.pointer.setVisible(true);
             this.pointer.lock();
+            // Wait UI / pointer unlock often leaves AudioContext suspended.
+            void this.sound?.audioSystem?.ensureResumed?.();
         };
         const updateWaitUi = (snapshot: ReturnType<LanMatchSession['getSnapshot']>) => {
             const api = this.loadingScreenApi;
@@ -1285,7 +1287,7 @@ export class GameScreen extends RootScreen {
         soundHandler.init?.();
         this.disposables.add(soundHandler);
         this.uiScene.add(hud);
-        const menu = this.menu = new GameMenu(this.gameMenuSubScreens, game, localPlayer, chatHistory, this.gservCon, this.isSinglePlayer, this.isTournament);
+        const menu = this.menu = new GameMenu(this.gameMenuSubScreens, game, localPlayer, chatHistory, this.gservCon, this.isSinglePlayer, this.isTournament, this.lanMatchSession);
         menu.init(hud);
         this.initGameMenuEvents(menu, eva, game, localPlayer, actionQueue, actionFactory);
         this.disposables.add(menu, () => this.menu = undefined);

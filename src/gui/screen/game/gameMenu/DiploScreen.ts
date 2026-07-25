@@ -3,6 +3,8 @@ import { HtmlView } from '@/gui/jsx/HtmlView';
 import { DiploForm } from '@/gui/screen/game/gameMenu/DiploForm';
 import { CompositeDisposable } from '@/util/disposable/CompositeDisposable';
 import { GameMenuScreen } from '@/gui/screen/game/GameMenuScreen';
+import { PlayerConnectionStatus } from '@/network/gamestate/PlayerConnectionStatus';
+
 interface Strings {
     get(key: string, ...args: any[]): string;
 }
@@ -68,15 +70,35 @@ interface GservConnection {
     };
     requestLoadInfo(): void;
 }
+interface LanMatchSessionLike {
+    getSnapshot(): {
+        localPeerId: string;
+        controlPeerId: string;
+        responseLagMsByPeerId: Record<string, number>;
+        waitingReconnectPeerIds: string[];
+        suspectedDropPeerIds: string[];
+        transportMembers: Array<{ id: string; status: string; isSelf?: boolean }>;
+    };
+    getLaunchDescriptor(): {
+        humanAssignments: Array<{ peerId: string; name: string }>;
+    };
+    isLocalControlPeer(): boolean;
+    onSnapshotChange: {
+        subscribe(handler: () => void): void;
+        unsubscribe(handler: () => void): void;
+    };
+}
 interface DiploScreenParams {
     localPlayer: Player;
     isSinglePlayer: boolean;
     game: Game;
     chatHistory?: ChatHistory;
     gservCon?: GservConnection;
+    lanMatchSession?: LanMatchSessionLike;
     onCancel: () => void;
     onToggleAlliance: (player: Player, enabled: boolean) => void;
     onSendMessage: (message: string) => void;
+    onKickPlayer?: (player: Player) => void;
 }
 interface SidebarButton {
     label: string;
@@ -116,6 +138,12 @@ interface PlayerInfo {
     allianceToggleable: boolean;
     alliance?: Alliance;
 }
+interface ConInfo {
+    name: string;
+    status: string;
+    ping?: number;
+    responseMs?: number;
+}
 class LoadInfoParser {
     parse(data: any): any {
         return data;
@@ -154,15 +182,54 @@ export class DiploScreen extends GameMenuScreen {
             options.conInfos = new LoadInfoParser().parse(data);
         });
     };
+    private handleLanSnapshot = (): void => {
+        this.form?.applyOptions((options: any) => {
+            options.conInfos = this.buildLanConInfos();
+            options.canKickPlayers = this.canKickPlayers();
+        });
+    };
     private updateForm = (): void => {
         this.form?.applyOptions((options: any) => {
             if (this.params) {
                 options.playerInfos = this.buildPlayerInfos(this.params.game, this.params.localPlayer);
                 options.taunts = this.taunts.value;
                 options.messages = this.params.chatHistory?.getAll();
+                if (this.params.lanMatchSession) {
+                    options.conInfos = this.buildLanConInfos();
+                    options.canKickPlayers = this.canKickPlayers();
+                }
             }
         });
     };
+    private canKickPlayers(): boolean {
+        return Boolean(this.params?.lanMatchSession?.isLocalControlPeer?.() && this.params?.onKickPlayer);
+    }
+    private buildLanConInfos(): ConInfo[] {
+        const session = this.params?.lanMatchSession;
+        if (!session) {
+            return [];
+        }
+        const snapshot = session.getSnapshot();
+        const waiting = new Set(snapshot.waitingReconnectPeerIds);
+        const suspected = new Set(snapshot.suspectedDropPeerIds);
+        const transportById = new Map(snapshot.transportMembers.map((member) => [member.id, member]));
+        return session.getLaunchDescriptor().humanAssignments.map((assignment) => {
+            const member = transportById.get(assignment.peerId);
+            let status = PlayerConnectionStatus.Connected;
+            if (waiting.has(assignment.peerId) || suspected.has(assignment.peerId)
+                || member?.status === 'disconnected') {
+                status = PlayerConnectionStatus.Disconnected;
+            } else if ((snapshot.responseLagMsByPeerId[assignment.peerId] ?? 0) >= 500) {
+                status = PlayerConnectionStatus.Lagging;
+            }
+            const responseMs = snapshot.responseLagMsByPeerId[assignment.peerId];
+            return {
+                name: assignment.name,
+                status,
+                responseMs,
+            };
+        });
+    }
     onEnter(params: DiploScreenParams): void {
         this.controller?.toggleContentAreaVisibility(true);
         this.initView(params);
@@ -188,6 +255,12 @@ export class DiploScreen extends GameMenuScreen {
                 }
             }, 10000);
             this.disposables.add(() => clearInterval(interval));
+        }
+        const lanMatchSession = params.lanMatchSession;
+        if (lanMatchSession) {
+            lanMatchSession.onSnapshotChange.subscribe(this.handleLanSnapshot);
+            this.disposables.add(() => lanMatchSession.onSnapshotChange.unsubscribe(this.handleLanSnapshot));
+            this.handleLanSnapshot();
         }
     }
     private initView(params: DiploScreenParams): void {
@@ -220,6 +293,8 @@ export class DiploScreen extends GameMenuScreen {
                 mapName: game.gameOpts.mapTitle,
                 messages: params.chatHistory?.getAll(),
                 chatHistory: params.chatHistory,
+                conInfos: params.lanMatchSession ? this.buildLanConInfos() : undefined,
+                canKickPlayers: Boolean(params.lanMatchSession?.isLocalControlPeer?.() && params.onKickPlayer),
                 onToggleTaunts: (enabled: boolean) => (this.taunts.value = enabled),
                 onToggleAlliance: params.onToggleAlliance,
                 onToggleChat: (player: Player, enabled: boolean) => {
@@ -232,6 +307,7 @@ export class DiploScreen extends GameMenuScreen {
                 },
                 onSendMessage: params.onSendMessage,
                 onCancelMessage: (shouldCancel: boolean) => shouldCancel && params.onCancel(),
+                onKickPlayer: params.onKickPlayer,
                 strings: this.strings,
             },
         }));
