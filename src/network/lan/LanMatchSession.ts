@@ -120,7 +120,13 @@ function arePeerListsEqual(left: string[], right: string[]): boolean {
     return left.every((peerId, index) => peerId === right[index]);
 }
 
+/** Per-tick console logging stalls lockstep on mobile/desktop; keep off unless debugging. */
+const LAN_MATCH_DEBUG = false;
+
 function logLanMatch(event: string, details: Record<string, unknown>): void {
+    if (!LAN_MATCH_DEBUG) {
+        return;
+    }
     console.log(`[lan-match] ${event}`, details);
 }
 

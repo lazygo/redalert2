@@ -88,6 +88,7 @@ export interface PregameLobbyFormOptions {
     onSendMessage?: (message: string) => void;
     onStateChange?: () => void;
     decoratePlayerSlot?: (playerSlot: any, slotInfo: SlotInfo | undefined, slotIndex: number) => void;
+    maxGameSpeed?: number;
 }
 
 function cloneAiPlayer(ai: any) {
@@ -428,7 +429,8 @@ export class PregameController {
                 onStateChange();
             },
             onChangeGameSpeed: (value: number) => {
-                this.applyGameOption((opts) => (opts.gameSpeed = value));
+                const maxSpeed = options.maxGameSpeed ?? 6;
+                this.applyGameOption((opts) => (opts.gameSpeed = Math.min(value, maxSpeed)));
                 onStateChange();
             },
             onChangeCredits: (value: number) => {
@@ -439,6 +441,7 @@ export class PregameController {
                 this.applyGameOption((opts) => (opts.unitCount = value));
                 onStateChange();
             },
+            maxGameSpeed: options.maxGameSpeed ?? 6,
         };
     }
 
@@ -683,6 +686,31 @@ export class PregameController {
     private applyGameOption(modifier: (opts: GameOpts) => void): void {
         modifier(this.requireGameOpts());
         this.savePreferences();
+    }
+
+    /** Cap lobby game speed (used by WebSocket netplay). */
+    clampGameSpeed(maxSpeed: number): void {
+        if (!this.gameOpts) {
+            return;
+        }
+        if (this.gameOpts.gameSpeed > maxSpeed) {
+            this.gameOpts.gameSpeed = maxSpeed;
+            this.savePreferences();
+        }
+    }
+
+    /**
+     * Earlier netplay builds forced speed ≤ 1 into prefs; restore a playable default
+     * so lookahead can actually run at real-time pace.
+     */
+    ensureNetplayGameSpeed(defaultSpeed: number = 6): void {
+        if (!this.gameOpts) {
+            return;
+        }
+        if (this.gameOpts.gameSpeed <= 1) {
+            this.gameOpts.gameSpeed = defaultSpeed;
+            this.savePreferences();
+        }
     }
 
     private handleCountrySelect(countryName: string, slotIndex: number): void {

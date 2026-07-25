@@ -25,7 +25,7 @@ import { Minimap } from '@/gui/screen/game/component/Minimap';
 import { Replay } from '@/network/gamestate/Replay';
 import { ReplayRecorder } from '@/network/gamestate/ReplayRecorder';
 import { SoloPlayTurnManager } from '@/network/gamestate/SoloPlayTurnManager';
-import { LanLockstepTurnManager } from '@/network/lan/LanLockstepTurnManager';
+import { LanLockstepTurnManager, getLockstepLookaheadTurns } from '@/network/lan/LanLockstepTurnManager';
 import { LanMatchSession } from '@/network/lan/LanMatchSession';
 import { CombatantSidebarModel } from '@/gui/screen/game/component/hud/viewmodel/CombatantSidebarModel';
 import { ActionFactoryReg } from '@/game/action/ActionFactoryReg';
@@ -139,7 +139,7 @@ export class GameScreen extends RootScreen {
             gameOpts = params.gameOpts;
         }
         else if (isLanGame) {
-            gameOpts = lanLaunch.gameOpts;
+            gameOpts = { ...lanLaunch.gameOpts };
         }
         else {
             const credentials = this.wolService.getCredentials();
@@ -672,7 +672,18 @@ export class GameScreen extends RootScreen {
         };
     }
     private initLockstep(game: any, localPlayer: any, actionFactory: any, actionQueue: any, replayRecorder: any, lanMatchSession: LanMatchSession): any {
-        const lockstepManager = new LanLockstepTurnManager(game, localPlayer, actionQueue, actionFactory, lanMatchSession, this.actionLogger, this.lockstepLogger, replayRecorder);
+        const launchKind = lanMatchSession.getLaunchDescriptor().kind;
+        const lockstepManager = new LanLockstepTurnManager(
+            game,
+            localPlayer,
+            actionQueue,
+            actionFactory,
+            lanMatchSession,
+            this.actionLogger,
+            this.lockstepLogger,
+            replayRecorder,
+            getLockstepLookaheadTurns(launchKind)
+        );
         const onLagStateChange = (lagState: boolean) => {
             this.lagState = lagState;
         };

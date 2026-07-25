@@ -14,7 +14,9 @@ import (
 const (
 	writeWait      = 10 * time.Second
 	pingPeriod     = 25 * time.Second
+	sendWait       = 2 * time.Second
 	maxMessageSize = 8 << 20 // 8 MiB for map chunks
+	sendBufferSize = 1024    // lockstep turns must not drop under burst
 )
 
 type Client struct {
@@ -36,7 +38,7 @@ func NewClient(hub *Hub, conn *websocket.Conn, id string) *Client {
 	return &Client{
 		hub:    hub,
 		conn:   conn,
-		send:   make(chan []byte, 64),
+		send:   make(chan []byte, sendBufferSize),
 		id:     id,
 		ctx:    ctx,
 		cancel: cancel,
@@ -56,14 +58,19 @@ func (c *Client) SendJSON(v any) {
 		return
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed {
+		c.mu.Unlock()
 		return
 	}
+	ch := c.send
+	c.mu.Unlock()
+
+	// Prefer blocking briefly over silently dropping lockstep turns.
 	select {
-	case c.send <- data:
-	default:
-		log.Printf("client %s send buffer full, dropping message", c.id)
+	case ch <- data:
+	case <-c.ctx.Done():
+	case <-time.After(sendWait):
+		log.Printf("client %s send buffer full after %s, dropping message", c.id, sendWait)
 	}
 }
 
