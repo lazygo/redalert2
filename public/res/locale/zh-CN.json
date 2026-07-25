@@ -398,5 +398,8 @@
     "GUI:NetPlayUnready": "取消准备",
     "GUI:NetPlayLeave": "离开房间",
     "GUI:NetPlayWaitingConfig": "正在同步房间配置...",
-    "GUI:NetPlayJoinTimeout": "加入房间超时"
+    "GUI:NetPlayJoinTimeout": "加入房间超时",
+    "GUI:NetPlayNeedReady": "需要所有玩家准备后才能开始游戏",
+    "GUI:NetPlayStartReadyHint": "所有玩家已准备，可以开始",
+    "GUI:NetPlayOnlyHostStart": "只有房主可以开始游戏"
 }

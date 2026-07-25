@@ -22,6 +22,8 @@ export interface ButtonConfig {
     label: string;
     tooltip?: string;
     disabled?: boolean;
+    /** Pulse Normal/Active while enabled (e.g. Start when all players ready). */
+    blink?: boolean;
     isBottom?: boolean;
     onClick?: () => void;
 }
@@ -50,6 +52,8 @@ export class MainMenu extends UiObject {
     private sidebarMpSlotEnabled: boolean = false;
     private sidebarCollapsed: boolean = true;
     private sidebarNeedsRefresh?: boolean;
+    private sidebarBlinkPhase = false;
+    private sidebarLastBlinkAt = 0;
     private sidebarMpSlotContent?: SidebarMpContent;
     private contentComponent?: UiObject;
     private sidebarPreviewInner?: UiObject;
@@ -403,6 +407,15 @@ export class MainMenu extends UiObject {
                 this._onSidebarToggle.dispatch(this, !this.sidebarCollapsed);
             }
         }
+        // deltaTime is renderer timestamp (performance.now).
+        if (!this.sidebarCollapsed) {
+            const hasBlink = this.sidebarButtonConfigs.some((config) => config?.blink && !config.disabled);
+            if (hasBlink && deltaTime - this.sidebarLastBlinkAt >= 400) {
+                this.sidebarLastBlinkAt = deltaTime;
+                this.sidebarBlinkPhase = !this.sidebarBlinkPhase;
+                this.applySidebarBlinkPhase();
+            }
+        }
     }
     updateSidebarButtons(): void {
         if (this.sidebarCollapsed) {
@@ -410,7 +423,8 @@ export class MainMenu extends UiObject {
             this.sidebarMpSlotContentEl.hide();
             this.sidebarSlots.forEach((slot) => {
                 let animRunner = slot.getAnimationRunner();
-                if ((animRunner as any).buttonState === MenuButtonState.Normal) {
+                if ((animRunner as any).buttonState === MenuButtonState.Normal ||
+                    (animRunner as any).buttonState === MenuButtonState.Active) {
                     (animRunner as any).buttonState = MenuButtonState.Unlit;
                 }
             });
@@ -424,12 +438,32 @@ export class MainMenu extends UiObject {
                     return;
                 }
                 const buttonConfig = this.sidebarButtonConfigs[slotIndex];
-                (animRunner as any).buttonState = buttonConfig?.disabled
-                    ? MenuButtonState.Unlit
-                    : MenuButtonState.Normal;
+                (animRunner as any).buttonState = this.resolveSidebarButtonState(buttonConfig);
             });
         }
         this.sidebarNeedsRefresh = false;
+    }
+    private applySidebarBlinkPhase(): void {
+        this.sidebarSlots.forEach((slot, slotIndex) => {
+            const buttonConfig = this.sidebarButtonConfigs[slotIndex];
+            if (!buttonConfig?.blink || buttonConfig.disabled) {
+                return;
+            }
+            const animRunner = slot.getAnimationRunner();
+            if ((animRunner as any).buttonState === MenuButtonState.Hidden) {
+                return;
+            }
+            (animRunner as any).buttonState = this.resolveSidebarButtonState(buttonConfig);
+        });
+    }
+    private resolveSidebarButtonState(buttonConfig?: ButtonConfig): MenuButtonState {
+        if (buttonConfig?.disabled) {
+            return MenuButtonState.Unlit;
+        }
+        if (buttonConfig?.blink && this.sidebarBlinkPhase) {
+            return MenuButtonState.Active;
+        }
+        return MenuButtonState.Normal;
     }
     onSidebarButtonClick(slotIndex: number): void {
         const onClick = this.sidebarButtonConfigs[slotIndex]?.onClick;

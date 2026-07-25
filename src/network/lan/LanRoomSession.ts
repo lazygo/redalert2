@@ -225,6 +225,22 @@ function cloneMapTransferState(state: Record<string, LanMapTransferPeerState>): 
     return cloned;
 }
 
+/** Ensure room player names are unique so getPlayerByName never merges controls. */
+function allocateUniquePlayerName(rawName: string, usedNames: Set<string>): string {
+    const base = (rawName || 'Player').trim() || 'Player';
+    if (!usedNames.has(base)) {
+        usedNames.add(base);
+        return base;
+    }
+    let suffix = 2;
+    while (usedNames.has(`${base}${suffix}`)) {
+        suffix += 1;
+    }
+    const unique = `${base}${suffix}`;
+    usedNames.add(unique);
+    return unique;
+}
+
 function cloneRoomState(state: LanRoomState): LanRoomState {
     return {
         version: 1,
@@ -355,7 +371,10 @@ export class LanRoomSession {
         this.dispatchSnapshot();
     }
 
-    applyHostPregameSnapshot(snapshot: { gameOpts: GameOpts; slotsInfo: SlotInfo[]; currentMapFile?: any }): void {
+    applyHostPregameSnapshot(
+        snapshot: { gameOpts: GameOpts; slotsInfo: SlotInfo[]; currentMapFile?: any },
+        options?: { keepReady?: boolean }
+    ): void {
         if (!this.roomState || !this.isHost()) {
             return;
         }
@@ -364,6 +383,9 @@ export class LanRoomSession {
         this.currentCustomMapFile = snapshot.gameOpts.mapOfficial || !snapshot.currentMapFile
             ? undefined
             : VirtualFile.fromBytes(snapshot.currentMapFile.getBytes(), snapshot.gameOpts.mapName);
+        if (!options?.keepReady) {
+            this.clearGuestReadyStates();
+        }
         this.reconcileRoomStateWithMesh();
         this.broadcastStateSync();
         this.scheduleCustomMapTransfers();
@@ -431,6 +453,7 @@ export class LanRoomSession {
             gameOpts.gameSpeed = GameSpeed.clampNetplaySpeed(gameOpts.gameSpeed);
             this.roomState.gameOpts.gameSpeed = gameOpts.gameSpeed;
         }
+        const localAssignment = this.roomState.humanAssignments.find((assignment) => assignment.peerId === self.id);
         const descriptor: LanLaunchDescriptor = {
             kind: this.launchKind,
             roomId: this.lastMeshSnapshot.roomId ?? '',
@@ -438,7 +461,7 @@ export class LanRoomSession {
             timestamp: Date.now(),
             hostPeerId: this.roomState.hostPeerId,
             localPeerId: self.id,
-            localPlayerName: self.name,
+            localPlayerName: localAssignment?.name ?? self.name,
             gameOpts,
             humanAssignments: this.roomState.humanAssignments.map((assignment) => ({ ...assignment })),
             mapTransferStateByPeerId: cloneMapTransferState(this.roomState.mapTransferStateByPeerId),
@@ -652,10 +675,12 @@ export class LanRoomSession {
     }
 
     private handleStartGame(_from: LanPeerIdentity, message: Extract<LanRoomMessage, { type: 'start-game' }>): void {
+        const self = this.meshSession.getSelf();
+        const localAssignment = message.descriptor.humanAssignments.find((assignment) => assignment.peerId === self.id);
         const descriptor = {
             ...message.descriptor,
-            localPeerId: this.meshSession.getSelf().id,
-            localPlayerName: this.meshSession.getSelf().name,
+            localPeerId: self.id,
+            localPlayerName: localAssignment?.name ?? self.name,
             returnRoute: message.descriptor.returnRoute,
             gameOpts: cloneGameOpts(message.descriptor.gameOpts),
         };
@@ -732,8 +757,11 @@ export class LanRoomSession {
             .filter((assignment) => !activePeerIds.has(assignment.peerId))
             .map((assignment) => assignment.slotIndex));
         const previousHumanByPeerId = new Map<string, any>();
-        previousAssignments.forEach((assignment) => {
-            const existingHuman = state.gameOpts.humanPlayers.find((player) => player.name === assignment.name);
+        const previousSorted = previousAssignments
+            .slice()
+            .sort((left, right) => left.slotIndex - right.slotIndex);
+        previousSorted.forEach((assignment, index) => {
+            const existingHuman = state.gameOpts.humanPlayers[index];
             if (existingHuman) {
                 previousHumanByPeerId.set(assignment.peerId, cloneHumanPlayer(existingHuman));
             }
@@ -741,6 +769,7 @@ export class LanRoomSession {
 
         const nextAssignments: LanHumanAssignment[] = [];
         const takenSlots = new Set<number>();
+        const usedNames = new Set<string>();
         const visibleSlots = this.computeVisibleSlots(state);
 
         state.memberOrder.forEach((peerId) => {
@@ -760,7 +789,7 @@ export class LanRoomSession {
             nextAssignments.push({
                 peerId,
                 slotIndex,
-                name: member.name,
+                name: allocateUniquePlayerName(member.name, usedNames),
             });
         });
 
@@ -980,9 +1009,29 @@ export class LanRoomSession {
             return false;
         }
         if (!this.roomState.gameOpts.mapOfficial) {
-            return this.lastMeshSnapshot.members.every((member) => this.roomState!.mapTransferStateByPeerId[member.id]?.status === 'complete');
+            if (!this.lastMeshSnapshot.members.every((member) => this.roomState!.mapTransferStateByPeerId[member.id]?.status === 'complete')) {
+                return false;
+            }
         }
-        return true;
+        // Host is implicitly ready; every other human must click Ready.
+        return this.roomState.humanAssignments.every((assignment) => {
+            if (assignment.peerId === this.roomState!.hostPeerId) {
+                return true;
+            }
+            return this.roomState!.readyStateByPeerId[assignment.peerId] === true;
+        });
+    }
+
+    private clearGuestReadyStates(): void {
+        if (!this.roomState) {
+            return;
+        }
+        const hostPeerId = this.roomState.hostPeerId;
+        Object.keys(this.roomState.readyStateByPeerId).forEach((peerId) => {
+            if (peerId !== hostPeerId) {
+                this.roomState!.readyStateByPeerId[peerId] = false;
+            }
+        });
     }
 
     private canInvite(): boolean {
@@ -1010,7 +1059,7 @@ export class LanRoomSession {
             const assignment = roomState?.humanAssignments.find((candidate) => candidate.peerId === member.id);
             return {
                 peerId: member.id,
-                name: member.name,
+                name: assignment?.name ?? member.name,
                 isSelf: member.isSelf,
                 isHost: hostPeerId === member.id,
                 isConnected: member.isSelf || member.status === 'connected',

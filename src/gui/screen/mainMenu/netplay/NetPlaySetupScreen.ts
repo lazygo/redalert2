@@ -241,16 +241,6 @@ export class NetPlaySetupScreen extends MainMenuScreen {
                 this.refreshSidebarMpText();
                 void this.refreshSidebarPreview();
             },
-            onStartGame: async () => this.startNetGame(),
-            onLeaveRoom: async () => this.handleLeaveRoom(),
-            onToggleReady: async () => {
-                const selfMember = this.roomSession.getSnapshot().members.find((member) => member.isSelf);
-                if (!selfMember) {
-                    return;
-                }
-                await this.roomSession.setReady(!selfMember.ready);
-            },
-            onChangeMap: async () => this.handleChangeMap(),
         };
     }
 
@@ -373,9 +363,20 @@ export class NetPlaySetupScreen extends MainMenuScreen {
 
     private async startNetGame(): Promise<void> {
         try {
+            const roomSnapshot = this.roomSession.getSnapshot();
+            if (!roomSnapshot.isHost) {
+                return;
+            }
+            if (!roomSnapshot.canStart) {
+                this.messageBoxApi.show(
+                    this.strings.get('GUI:NetPlayNeedReady') || '需要所有玩家准备后才能开始游戏。'
+                );
+                return;
+            }
             this.pregameController.clampGameSpeed(GameSpeed.NETPLAY_MAX_SPEED);
             this.pregameController.ensureNetplayGameSpeed(GameSpeed.NETPLAY_DEFAULT_SPEED);
-            this.roomSession.applyHostPregameSnapshot(this.pregameController.getSnapshot());
+            // Keep ready flags — this is the final push right before launch.
+            this.roomSession.applyHostPregameSnapshot(this.pregameController.getSnapshot(), { keepReady: true });
             this.roomSession.startGame({
                 screenType: MainMenuScreenType.NetPlaySetup,
                 params: {},
@@ -413,7 +414,13 @@ export class NetPlaySetupScreen extends MainMenuScreen {
         } else {
             buttons.push({
                 label: this.strings.get('GUI:NetPlayStart') || '开始游戏',
+                tooltip: roomSnapshot.isHost
+                    ? (roomSnapshot.canStart
+                        ? (this.strings.get('GUI:NetPlayStartReadyHint') || '所有玩家已准备，可以开始')
+                        : (this.strings.get('GUI:NetPlayNeedReady') || '需要所有玩家准备后才能开始游戏'))
+                    : (this.strings.get('GUI:NetPlayOnlyHostStart') || '只有房主可以开始游戏'),
                 disabled: !roomSnapshot.isHost || !roomSnapshot.canStart,
+                blink: roomSnapshot.isHost && roomSnapshot.canStart,
                 onClick: () => {
                     void this.startNetGame();
                 },
