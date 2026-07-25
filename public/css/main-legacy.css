@@ -2271,7 +2271,33 @@ input[type="range"]:focus {
 
 #ra2web-root .diplo-form th.player-country,
 #ra2web-root .diplo-form td.player-country {
-    width: 55px;
+    width: 72px;
+}
+
+#ra2web-root .diplo-form .player-country-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#ra2web-root .diplo-form .player-host-status {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+#ra2web-root .diplo-form .player-host-status img {
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
+}
+
+#ra2web-root .diplo-form .player-country-icon,
+#ra2web-root .diplo-form .player-country-cell .player-country-icon {
+    flex-shrink: 0;
 }
 
 #ra2web-root .diplo-form th.player-ping,

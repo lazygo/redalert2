@@ -74,12 +74,14 @@ interface LanMatchSessionLike {
     getSnapshot(): {
         localPeerId: string;
         controlPeerId: string;
+        activePeerIds: string[];
         responseLagMsByPeerId: Record<string, number>;
         waitingReconnectPeerIds: string[];
         suspectedDropPeerIds: string[];
         transportMembers: Array<{ id: string; status: string; isSelf?: boolean }>;
     };
     getLaunchDescriptor(): {
+        hostPeerId: string;
         humanAssignments: Array<{ peerId: string; name: string }>;
     };
     isLocalControlPeer(): boolean;
@@ -186,6 +188,7 @@ export class DiploScreen extends GameMenuScreen {
         this.form?.applyOptions((options: any) => {
             options.conInfos = this.buildLanConInfos();
             options.canKickPlayers = this.canKickPlayers();
+            options.hostPlayerName = this.getHostPlayerName();
         });
     };
     private updateForm = (): void => {
@@ -197,12 +200,25 @@ export class DiploScreen extends GameMenuScreen {
                 if (this.params.lanMatchSession) {
                     options.conInfos = this.buildLanConInfos();
                     options.canKickPlayers = this.canKickPlayers();
+                    options.hostPlayerName = this.getHostPlayerName();
                 }
             }
         });
     };
     private canKickPlayers(): boolean {
         return Boolean(this.params?.lanMatchSession?.isLocalControlPeer?.() && this.params?.onKickPlayer);
+    }
+    private getHostPlayerName(): string | undefined {
+        const session = this.params?.lanMatchSession;
+        if (!session) {
+            return undefined;
+        }
+        const snapshot = session.getSnapshot();
+        const descriptor = session.getLaunchDescriptor();
+        const hostPeerId = snapshot.activePeerIds.includes(descriptor.hostPeerId)
+            ? descriptor.hostPeerId
+            : snapshot.controlPeerId;
+        return descriptor.humanAssignments.find((assignment) => assignment.peerId === hostPeerId)?.name;
     }
     private buildLanConInfos(): ConInfo[] {
         const session = this.params?.lanMatchSession;
@@ -232,8 +248,8 @@ export class DiploScreen extends GameMenuScreen {
     }
     onEnter(params: DiploScreenParams): void {
         this.controller?.toggleContentAreaVisibility(true);
-        this.initView(params);
         this.params = params;
+        this.initView(params);
         this.renderer.onFrame.subscribe(this.onFrame);
         this.disposables.add(() => this.renderer.onFrame.unsubscribe(this.onFrame));
         const chatHistory = params.chatHistory;
@@ -295,6 +311,7 @@ export class DiploScreen extends GameMenuScreen {
                 chatHistory: params.chatHistory,
                 conInfos: params.lanMatchSession ? this.buildLanConInfos() : undefined,
                 canKickPlayers: Boolean(params.lanMatchSession?.isLocalControlPeer?.() && params.onKickPlayer),
+                hostPlayerName: params.lanMatchSession ? this.getHostPlayerName() : undefined,
                 onToggleTaunts: (enabled: boolean) => (this.taunts.value = enabled),
                 onToggleAlliance: params.onToggleAlliance,
                 onToggleChat: (player: Player, enabled: boolean) => {
