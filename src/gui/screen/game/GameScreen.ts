@@ -744,8 +744,9 @@ export class GameScreen extends RootScreen {
                 return;
             }
             this.playerUi?.worldInteraction?.setEnabled?.(true);
+            // Restore in-game cursor (same as onGameStart); lock may wait for a click.
+            this.pointer.setVisible(true);
             this.pointer.lock();
-            this.pointer.setVisible(false);
         };
         const updateWaitUi = (snapshot: ReturnType<LanMatchSession['getSnapshot']>) => {
             const api = this.loadingScreenApi;
