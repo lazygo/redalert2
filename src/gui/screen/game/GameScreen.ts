@@ -65,7 +65,7 @@ import * as THREE from 'three';
 export class GameScreen extends RootScreen {
     private disposables = new CompositeDisposable();
     private avgPing = new MedianPing();
-    private preventUnload = true;
+    // private preventUnload = true;
     protected controller?: any;
     private game?: any;
     private replay?: any;
@@ -90,13 +90,20 @@ export class GameScreen extends RootScreen {
     private isTournament = false;
     private playerName = '';
     private returnTo?: any;
-    private debugMapFile?: any;
+    // private debugMapFile?: any;
     private pausedAtSpeed?: number;
     private gameEndHandled = false;
     private leaveCleanupDone = false;
     private readonly navigationGuard = new NavigationGuard();
+    debugMapFile: any;
     constructor(private workerHostApi: any, private gservCon: any, private wgameresService: any, private wolService: any, private mapTransferService: any, private engineVersion: string, private engineModHash: string, private errorHandler: any, private gameMenuSubScreens: any, private loadingScreenApiFactory: any, private gameOptsParser: any, private gameOptsSerializer: any, private config: any, private strings: any, private renderer: any, private uiScene: any, private runtimeVars: any, private messageBoxApi: any, private toastApi: any, private uiAnimationLoop: any, private viewport: any, private jsxRenderer: any, private pointer: any, private sound: any, private music: any, private mixer: any, private keyBinds: any, private generalOptions: any, private localPrefs: any, private actionLogger: any, private lockstepLogger: any, private replayManager: any, private fullScreen: any, private mapFileLoader: any, private mapDir: any, private mapList: any, private gameLoader: any, private vxlGeometryPool: any, private buildingImageDataCache: any, private mutedPlayers: any, private tauntsEnabled: any, private speedCheat: any, private sentry: any, private battleControlApi: any) {
         super();
+        this.workerHostApi;
+        this.wgameresService;
+        this.fullScreen;
+        this.tauntsEnabled;
+        this.sentry;
+
         this.onGservClose = (error: any) => {
             if (this.replay) {
                 this.replay.finish(this.game.currentTick);
@@ -139,7 +146,8 @@ export class GameScreen extends RootScreen {
         const timestamp = lanLaunch?.timestamp ?? params.timestamp;
         this.returnTo = params.returnTo ?? lanLaunch?.returnRoute;
         this.isTournament = params.tournament;
-        const playerName = this.playerName = lanLaunch?.localPlayerName ?? params.playerName;
+        this.playerName = lanLaunch?.localPlayerName ?? params.playerName;
+        const playerName = this.playerName;
         const isSinglePlayer = this.isSinglePlayer = params.create && params.singlePlayer;
         const isLanGame = this.isLanGame = Boolean(lanLaunch);
         if (isSinglePlayer) {
@@ -155,7 +163,7 @@ export class GameScreen extends RootScreen {
                 this.controller?.goToScreen(ScreenType.MainMenuRoot, {
                     route: new MainMenuRoute(MainMenuScreenType.Login, {
                         forceUser: playerName,
-                        afterLogin: (user: any) => new RootRoute('Game', params)
+                        afterLogin: (_user: any) => new RootRoute('Game', params)
                     })
                 });
                 return;
@@ -371,6 +379,7 @@ export class GameScreen extends RootScreen {
         setMobileTouchControlsVisible(false);
         this.navigationGuard.disable();
         this.pointer.unlock();
+        this.pointer.setVisible(true);
         const hadGameAnimationLoop = Boolean(this.gameAnimationLoop);
         if (this.gameAnimationLoop) {
             this.gameAnimationLoop.destroy();
@@ -590,7 +599,7 @@ export class GameScreen extends RootScreen {
             }
         }
     }
-    private async joinGame(gameId: string, retries: number, cancellationToken: any): Promise<void> {
+    private async joinGame(gameId: string, retries: number, _cancellationToken: any): Promise<void> {
         if (retries) {
             let lastError: any;
             while (retries--) {
@@ -1312,12 +1321,12 @@ export class GameScreen extends RootScreen {
         this.uiAnimationLoop.stop();
         this.gameAnimationLoop.start();
     }
-    private initNetStats(localPlayer: any): void {
+    private initNetStats(_localPlayer: any): void {
         const pingMonitor = new PingMonitor(this.gameTurnMgr, this.gservCon, this.avgPing);
         pingMonitor.monitor();
         this.disposables.add(pingMonitor);
     }
-    private initUi(localPlayer: any, game: any, replayRecorder: any, actionQueue: any, actionFactory: any, hud: any, eva: any, uiInitResult: any): void {
+    private initUi(localPlayer: any, game: any, _replayRecorder: any, actionQueue: any, actionFactory: any, hud: any, eva: any, uiInitResult: any): void {
         const { messageList, chatHistory } = uiInitResult;
         const soundHandler = new SoundHandler(game, uiInitResult.worldViewInitResult.worldSound, eva, this.sound, game.events, messageList, this.strings, localPlayer);
         soundHandler.init?.();
@@ -1526,6 +1535,10 @@ export class GameScreen extends RootScreen {
                 gameResultPopup.destroy?.();
             }
 
+            // Restore cursor before leaving — onGameEnd hides it for the victory splash.
+            this.pointer?.unlock?.();
+            this.pointer?.setVisible?.(true);
+
             const route = localPlayer
                 ? new MainMenuRoute(MainMenuScreenType.Score, {
                     game,
@@ -1572,7 +1585,7 @@ export class GameScreen extends RootScreen {
         }
         this.handleError(error, errorMessage);
     }
-    private handleMapLoadError(error: any, mapName: string): void {
+    private handleMapLoadError(error: any, _mapName: string): void {
         if (error instanceof OperationCanceledError || error instanceof IrcConnection.SocketError) {
             return;
         }
@@ -1583,7 +1596,7 @@ export class GameScreen extends RootScreen {
         }
         this.handleError(error, errorMessage);
     }
-    private handleGameLoadError(error: any, params: any, gameOpts: any): void {
+    private handleGameLoadError(error: any, _params: any, gameOpts: any): void {
         if (error instanceof OperationCanceledError || error instanceof IrcConnection.SocketError) {
             return;
         }
@@ -1597,7 +1610,7 @@ export class GameScreen extends RootScreen {
         }
         this.handleError(error, errorMessage);
     }
-    private handleGameError(error: any, message: string, game: any, debugDataProvider?: () => Promise<any>, isCustomMap?: boolean): void {
+    private handleGameError(error: any, message: string, game: any, _debugDataProvider?: () => Promise<any>, isCustomMap?: boolean): void {
         const replay = this.replay;
         if (replay) {
             this.saveReplay(replay);
@@ -1612,30 +1625,30 @@ export class GameScreen extends RootScreen {
             });
         }
     }
-    private sendDebugInfo(error: any, { gameId, replay, map, official }: {
-        gameId?: string;
-        replay?: any;
-        map?: any;
-        official?: boolean;
-    } = {}, debugDataProvider?: () => Promise<any>): void {
-        console.error('Game error:', error, { gameId, official });
-    }
+    // private sendDebugInfo(error: any, { gameId, replay, map, official }: {
+    //     gameId?: string;
+    //     replay?: any;
+    //     map?: any;
+    //     official?: boolean;
+    // } = {}, _debugDataProvider?: () => Promise<any>): void {
+    //     console.error('Game error:', error, { gameId, official });
+    // }
     private sendGameRes(game: any, result: any): void {
         console.log('Game result:', { game: game.id, result });
     }
-    private getGameResClientInfo(result: any): any {
-        return {
-            clientVers: this.engineVersion,
-            avgFps: 0,
-            avgRtt: this.avgPing.calculate() ?? 0,
-            outOfSync: result.desync,
-            gameSku: this.wolService.getConfig().getClientSku(),
-            accountName: this.playerName,
-            suddenDisconnect: result.disconnect,
-            quit: result.quit,
-            finished: result.finished,
-            pingsRecv: 0,
-            pingsSent: 0
-        };
-    }
+    // private getGameResClientInfo(result: any): any {
+    //     return {
+    //         clientVers: this.engineVersion,
+    //         avgFps: 0,
+    //         avgRtt: this.avgPing.calculate() ?? 0,
+    //         outOfSync: result.desync,
+    //         gameSku: this.wolService.getConfig().getClientSku(),
+    //         accountName: this.playerName,
+    //         suddenDisconnect: result.disconnect,
+    //         quit: result.quit,
+    //         finished: result.finished,
+    //         pingsRecv: 0,
+    //         pingsSent: 0
+    //     };
+    // }
 }

@@ -44,6 +44,8 @@ export class ScoreScreen extends MainMenuScreen {
     private wolService?: WolService;
     private scoreTable?: any;
     private reportUpdateTask?: Task<void>;
+    /** Kept for silent viewport re-renders that call onEnter() without args. */
+    private params?: ScoreScreenParams;
     constructor(strings: any, jsxRenderer: any, wolService?: WolService) {
         super();
         this.strings = strings;
@@ -51,29 +53,50 @@ export class ScoreScreen extends MainMenuScreen {
         this.wolService = wolService;
         this.musicType = MusicType.Score;
     }
-    async onEnter(params: ScoreScreenParams): Promise<void> {
-        this.title = params.singlePlayer
+    async onEnter(params?: ScoreScreenParams): Promise<void> {
+        if (params) {
+            this.params = params;
+        }
+        const enterParams = params ?? this.params;
+        if (!enterParams) {
+            console.error("[ScoreScreen] onEnter called without params");
+            return;
+        }
+        this.title = enterParams.singlePlayer
             ? this.strings.get("GUI:SkirmishScore")
             : this.strings.get("GUI:MultiplayerScore");
         this.controller.toggleMainVideo(false);
-        this.initView(params);
+        this.initView(enterParams);
         // WOL online matchmaking only; LAN/netplay/skirmish have no game-report service.
-        if (!params.singlePlayer && this.wolService) {
-            this.loadGameReport(params.game);
+        if (!enterParams.singlePlayer && this.wolService) {
+            this.loadGameReport(enterParams.game);
         }
     }
     private initView({ game, localPlayer, singlePlayer, tournament, returnTo, }: ScoreScreenParams): void {
+        const continueLabel = this.strings.has("GUI:Continue")
+            ? this.strings.get("GUI:Continue")
+            : this.strings.get("GUI:Back") || "继续";
+        const goBack = () => {
+            this.controller?.goToScreen(returnTo.screenType, returnTo.params);
+        };
+        // Top + bottom so the action is visible even if the bottom row is clipped.
         this.controller.setSidebarButtons([
             {
-                label: this.strings.get("GUI:Continue"),
+                label: continueLabel,
+                tooltip: this.strings.get("STT:MPScoreButtonContinue"),
+                onClick: goBack,
+            },
+            {
+                label: continueLabel,
                 tooltip: this.strings.get("STT:MPScoreButtonContinue"),
                 isBottom: true,
-                onClick: () => {
-                    this.controller?.goToScreen(returnTo.screenType, returnTo.params);
-                },
+                onClick: goBack,
             },
         ]);
         this.controller.showSidebarButtons();
+        if (this.title) {
+            this.controller.setSidebarTitle(this.title);
+        }
         const side = localPlayer.country?.side ?? SideType.GDI;
         const assets = sideAssets.get(side);
         if (!assets) {
