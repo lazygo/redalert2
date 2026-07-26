@@ -1,13 +1,26 @@
 let mobileTouchButton: number = 0;
+let mobileTouchCtrlHeld = false;
 
 /** Normalized joystick direction in [-1, 1]. Called while the stick is active. */
 export type MobileJoystickPanHandler = (nx: number, ny: number) => void;
 
+/** Fired when mobile modifier hold state changes (e.g. Ctrl for force-attack). */
+export type MobileModifierChangeHandler = (mods: {
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}) => void;
+
 let joystickPanHandler: MobileJoystickPanHandler | undefined;
+let modifierChangeHandler: MobileModifierChangeHandler | undefined;
 let controlsVisible = false;
 let controlsRoot: HTMLElement | undefined;
 /** Force-release active joystick (e.g. when HUD hides mid-drag). */
 let forceReleaseJoystick: (() => void) | undefined;
+/** Force-release R-hold so canvas touches stop looking like RMB. */
+let forceReleaseRightHold: (() => void) | undefined;
+/** Force-release Ctrl-hold so force-attack doesn't stick. */
+let forceReleaseCtrlHold: (() => void) | undefined;
 
 export function getMobileTouchButton(): number {
   return mobileTouchButton;
@@ -17,8 +30,25 @@ export function setMobileTouchButton(button: number): void {
   mobileTouchButton = button;
 }
 
+/** True while the on-screen Ctl button is held (maps to keyboard Ctrl). */
+export function getMobileTouchCtrl(): boolean {
+  return mobileTouchCtrlHeld;
+}
+
 export function setMobileJoystickPanHandler(handler?: MobileJoystickPanHandler): void {
   joystickPanHandler = handler;
+}
+
+export function setMobileModifierChangeHandler(handler?: MobileModifierChangeHandler): void {
+  modifierChangeHandler = handler;
+}
+
+function notifyModifierChange(): void {
+  modifierChangeHandler?.({
+    ctrlKey: mobileTouchCtrlHeld,
+    shiftKey: false,
+    altKey: false,
+  });
 }
 
 /** Show only during an active match (hidden in menus / loading). */
@@ -28,9 +58,12 @@ export function setMobileTouchControlsVisible(visible: boolean): void {
     controlsRoot.classList.toggle('mobile-touch-controls-visible', visible);
   }
   if (!visible) {
-    mobileTouchButton = 0;
-    // Finger may still be down when match UI hides — always spring the stick back.
+    // Finger may still be down when match UI hides — clear stick + holds.
     forceReleaseJoystick?.();
+    forceReleaseRightHold?.();
+    forceReleaseCtrlHold?.();
+    mobileTouchButton = 0;
+    mobileTouchCtrlHeld = false;
   }
 }
 
@@ -46,6 +79,12 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'mobile-touch-buttons-row';
 
+  const ctrlBtn = document.createElement('button');
+  ctrlBtn.type = 'button';
+  ctrlBtn.className = 'mobile-touch-btn mobile-touch-btn-ctrl';
+  ctrlBtn.textContent = 'Ctl';
+  ctrlBtn.setAttribute('aria-label', 'Hold for Ctrl (force attack)');
+
   const rightBtn = document.createElement('button');
   rightBtn.type = 'button';
   rightBtn.className = 'mobile-touch-btn mobile-touch-btn-right';
@@ -60,6 +99,7 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
   knob.className = 'mobile-joystick-knob';
   joystick.appendChild(knob);
 
+  buttonsRow.appendChild(ctrlBtn);
   buttonsRow.appendChild(rightBtn);
   cluster.appendChild(buttonsRow);
   cluster.appendChild(joystick);
@@ -67,6 +107,7 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
   container.appendChild(wrapper);
 
   mobileTouchButton = 0;
+  mobileTouchCtrlHeld = false;
 
   const JOYSTICK_RADIUS = 42;
   const DEADZONE = 0.12;
@@ -77,6 +118,7 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
   let panRaf = 0;
 
   let rightHoldPointerId: number | undefined;
+  let ctrlHoldPointerId: number | undefined;
 
   const setKnob = (nx: number, ny: number): void => {
     const px = nx * JOYSTICK_RADIUS;
@@ -249,32 +291,131 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
     updateStickFromPoint(e.clientX, e.clientY);
   };
 
-  const endRightHold = (pointerId: number): void => {
-    if (rightHoldPointerId !== pointerId) {
-      return;
-    }
-    rightHoldPointerId = undefined;
-    mobileTouchButton = 0;
-    rightBtn.classList.remove('active');
-    window.removeEventListener('pointerup', onRightWindowUp);
-    window.removeEventListener('pointercancel', onRightWindowUp);
+  type HoldCleanup = {
+    removeListeners: () => void;
+    end: (pointerId: number) => void;
+    release: () => void;
+    onDown: (e: PointerEvent) => void;
   };
 
-  const onRightWindowUp = (e: PointerEvent): void => {
-    endRightHold(e.pointerId);
+  const createHoldControl = (opts: {
+    button: HTMLButtonElement;
+    onActiveChange: (active: boolean) => void;
+    getPointerId: () => number | undefined;
+    setPointerId: (id: number | undefined) => void;
+  }): HoldCleanup => {
+    const removeListeners = (): void => {
+      window.removeEventListener('pointerup', onWindowUp, true);
+      window.removeEventListener('pointercancel', onWindowUp, true);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('touchend', onTouchFailsafe, true);
+      window.removeEventListener('touchcancel', onTouchFailsafe, true);
+      opts.button.removeEventListener('lostpointercapture', onLostCapture);
+    };
+
+    const end = (pointerId: number): void => {
+      if (opts.getPointerId() !== pointerId) {
+        return;
+      }
+      opts.setPointerId(undefined);
+      opts.onActiveChange(false);
+      opts.button.classList.remove('active');
+      removeListeners();
+      try {
+        opts.button.releasePointerCapture?.(pointerId);
+      } catch {
+        // ignore
+      }
+    };
+
+    const release = (): void => {
+      const id = opts.getPointerId();
+      if (id !== undefined) {
+        end(id);
+      } else {
+        opts.onActiveChange(false);
+        opts.button.classList.remove('active');
+        removeListeners();
+      }
+    };
+
+    const onWindowUp = (e: PointerEvent): void => {
+      end(e.pointerId);
+    };
+    const onLostCapture = (e: PointerEvent): void => {
+      end(e.pointerId);
+    };
+    const onBlur = (): void => {
+      release();
+    };
+    const onVis = (): void => {
+      if (document.hidden) {
+        release();
+      }
+    };
+    const onTouchFailsafe = (e: TouchEvent): void => {
+      if (opts.getPointerId() === undefined) {
+        return;
+      }
+      if (e.touches.length === 0) {
+        release();
+      }
+    };
+
+    const onDown = (e: PointerEvent): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (opts.getPointerId() !== undefined) {
+        end(opts.getPointerId()!);
+      }
+      opts.setPointerId(e.pointerId);
+      opts.onActiveChange(true);
+      opts.button.classList.add('active');
+      try {
+        opts.button.setPointerCapture?.(e.pointerId);
+      } catch {
+        // optional
+      }
+      window.addEventListener('pointerup', onWindowUp, true);
+      window.addEventListener('pointercancel', onWindowUp, true);
+      window.addEventListener('touchend', onTouchFailsafe, true);
+      window.addEventListener('touchcancel', onTouchFailsafe, true);
+      window.addEventListener('blur', onBlur);
+      document.addEventListener('visibilitychange', onVis);
+      opts.button.addEventListener('lostpointercapture', onLostCapture);
+    };
+
+    return { removeListeners, end, release, onDown };
   };
 
-  const onRightDown = (e: PointerEvent): void => {
-    e.preventDefault();
-    e.stopPropagation();
-    rightHoldPointerId = e.pointerId;
-    mobileTouchButton = 2;
-    rightBtn.classList.add('active');
-    window.addEventListener('pointerup', onRightWindowUp);
-    window.addEventListener('pointercancel', onRightWindowUp);
-  };
+  const rightHold = createHoldControl({
+    button: rightBtn,
+    getPointerId: () => rightHoldPointerId,
+    setPointerId: (id) => {
+      rightHoldPointerId = id;
+    },
+    onActiveChange: (active) => {
+      mobileTouchButton = active ? 2 : 0;
+    },
+  });
+  forceReleaseRightHold = rightHold.release;
 
-  rightBtn.addEventListener('pointerdown', onRightDown);
+  const ctrlHold = createHoldControl({
+    button: ctrlBtn,
+    getPointerId: () => ctrlHoldPointerId,
+    setPointerId: (id) => {
+      ctrlHoldPointerId = id;
+    },
+    onActiveChange: (active) => {
+      mobileTouchCtrlHeld = active;
+      notifyModifierChange();
+    },
+  });
+  forceReleaseCtrlHold = ctrlHold.release;
+
+  rightBtn.addEventListener('pointerdown', rightHold.onDown);
+  ctrlBtn.addEventListener('pointerdown', ctrlHold.onDown);
 
   joystick.addEventListener('pointerdown', onJoystickPointerDown);
   joystick.addEventListener('pointermove', onJoystickPointerMove);
@@ -289,17 +430,21 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
 
   return () => {
     forceReleaseJoystick = undefined;
+    forceReleaseRightHold = undefined;
+    forceReleaseCtrlHold = undefined;
     releaseActiveJoystick();
-    if (rightHoldPointerId !== undefined) {
-      endRightHold(rightHoldPointerId);
-    }
+    rightHold.release();
+    ctrlHold.release();
     mobileTouchButton = 0;
+    mobileTouchCtrlHeld = false;
     joystickPanHandler = undefined;
+    modifierChangeHandler = undefined;
     if (controlsRoot === wrapper) {
       controlsRoot = undefined;
     }
 
-    rightBtn.removeEventListener('pointerdown', onRightDown);
+    rightBtn.removeEventListener('pointerdown', rightHold.onDown);
+    ctrlBtn.removeEventListener('pointerdown', ctrlHold.onDown);
 
     joystick.removeEventListener('pointerdown', onJoystickPointerDown);
     joystick.removeEventListener('pointermove', onJoystickPointerMove);

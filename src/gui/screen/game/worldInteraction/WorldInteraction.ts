@@ -2,7 +2,7 @@ import { rectContainsPoint } from '@/util/geometry';
 import { PointerType } from '@/engine/type/PointerType';
 import { ActionFilter } from './DefaultActionHandler';
 import { isMacFirefox } from '@/util/userAgent';
-import { setMobileJoystickPanHandler } from '@/gui/MobileTouchControls';
+import { setMobileJoystickPanHandler, setMobileModifierChangeHandler, getMobileTouchCtrl } from '@/gui/MobileTouchControls';
 export class WorldInteraction {
     private initialized = false;
     private enabled = true;
@@ -59,9 +59,21 @@ export class WorldInteraction {
         this.minimapHandler.minimap.onMouseOut.subscribe(this.handleMinimapMouseOut);
         this.tooltipHandler.init();
         setMobileJoystickPanHandler(this.handleJoystickPan);
+        setMobileModifierChangeHandler((mods) => {
+            this.applyKeyModifiers({
+                type: mods.ctrlKey ? 'keydown' : 'keyup',
+                key: 'Control',
+                ctrlKey: mods.ctrlKey,
+                shiftKey: mods.shiftKey,
+                altKey: mods.altKey,
+                metaKey: false,
+                repeat: false,
+            });
+        });
     }
     private teardownHandlers(): void {
         setMobileJoystickPanHandler(undefined);
+        setMobileModifierChangeHandler(undefined);
         this.pointerEvents.removeEventListener('canvas', 'mousemove', this.handleMouseMove);
         this.pointerEvents.removeEventListener('canvas', 'mousedown', this.handleMouseDown);
         this.pointerEvents.removeEventListener('canvas', 'mouseup', this.handleMouseUp);
@@ -258,9 +270,15 @@ export class WorldInteraction {
             event.button = 0;
         }
         this.mapScrollHandler.cancel();
+        // Touch leaves no reliable mouseout after sliding off the radar; never hijack
+        // world LMB from a sticky isMinimapHover — require a live hit on the minimap mesh.
+        if (event.isTouch && this.isMinimapHover && !this.isLiveMinimapPointerHover()) {
+            this.clearMinimapHoverState();
+        }
         if (event.button === 0 &&
             this.isMinimapHover &&
-            this.minimapHandler.isTileWithinViewport(this.minimapHoverTile)) {
+            this.minimapHandler.isTileWithinViewport(this.minimapHoverTile) &&
+            (!event.isTouch || this.isLiveMinimapPointerHover())) {
             this.clickOrigin = event.pointer;
             this.mousePressed = event.button;
             this.lastMouseDownEvent = event;
@@ -290,6 +308,14 @@ export class WorldInteraction {
             event.button = 0;
         }
         if (this.mousePressed !== event.button) {
+            // Touch: R-hold / cancel can desync button vs mousePressed and leave
+            // selection/placement stuck forever (mousedown ignored while pressed).
+            if (event.isTouch && this.mousePressed !== undefined) {
+                this.cancelMouseUp();
+            }
+            if (event.isTouch) {
+                this.clearMinimapHoverState();
+            }
             return;
         }
         if (this.minimapDragButton === event.button) {
@@ -298,13 +324,19 @@ export class WorldInteraction {
             this.suppressNextMinimapClick = this.hasDragged;
             this.hasDragged = false;
             this.minimapDragButton = undefined;
+            if (event.isTouch) {
+                this.clearMinimapHoverState();
+            }
             this.pointer.setPointerType(this.isMinimapHover ? PointerType.Mini : PointerType.Default);
             return;
         }
-        if (event.isTouch && this.lastKeyMods && this.lastKeyMods !== this.lastKeyboardEvent) {
-            event.ctrlKey = this.lastKeyMods.ctrlKey;
-            event.shiftKey = this.lastKeyMods.shiftKey;
-            event.altKey = this.lastKeyMods.altKey;
+        if (event.isTouch) {
+            // Prefer live mobile Ctl hold; also keep any keyboard mods / long-press path.
+            event.ctrlKey = !!(event.ctrlKey || getMobileTouchCtrl() || this.lastKeyMods?.ctrlKey);
+            if (this.lastKeyMods && this.lastKeyMods !== this.lastKeyboardEvent) {
+                event.shiftKey = this.lastKeyMods.shiftKey;
+                event.altKey = this.lastKeyMods.altKey;
+            }
         }
         this.pointerEvents.intersectionsEnabled = true;
         this.mousePressed = undefined;
@@ -316,6 +348,9 @@ export class WorldInteraction {
         if (wasPanning && this.hasDragged) {
             this.mapHoverHandler.update(event.pointer, true);
             this.currentMode?.hover?.(this.getCurrentHover(), this.isMinimapHover);
+            if (event.isTouch) {
+                this.clearMinimapHoverState();
+            }
             return;
         }
         if (this.currentMode) {
@@ -330,6 +365,9 @@ export class WorldInteraction {
                 this.currentMode = undefined;
                 this.pointer.setPointerType(PointerType.Default);
             }
+            if (event.isTouch) {
+                this.clearMinimapHoverState();
+            }
             return;
         }
         let boxSelectionHandled = false;
@@ -340,6 +378,9 @@ export class WorldInteraction {
             }
         }
         if (event.button !== 0 && event.button !== 2) {
+            if (event.isTouch) {
+                this.clearMinimapHoverState();
+            }
             return;
         }
         const rightClickMove = this.isRightClickMove();
@@ -370,6 +411,9 @@ export class WorldInteraction {
         }
         if (!executeDefaultClick && (!rightClickMove || !event.shiftKey || event.ctrlKey) && (!rightClickMove || !isDoubleSameClick)) {
             if (!isClick) {
+                if (event.isTouch) {
+                    this.clearMinimapHoverState();
+                }
                 return;
             }
             this.unitSelectionHandler.deselectAll();
@@ -379,6 +423,9 @@ export class WorldInteraction {
             if (this.lastDefaultModeClickDetails) {
                 this.lastDefaultModeClickDetails.selectionHash = this.unitSelectionHandler.getHash();
             }
+        }
+        if (event.isTouch) {
+            this.clearMinimapHoverState();
         }
     };
     private readonly handleWheel = (event: any): void => {
@@ -416,13 +463,23 @@ export class WorldInteraction {
         }
     };
     private readonly handleMinimapMouseOut = (): void => {
-        if (this.minimapDragButton !== undefined) {
-            return;
+        // Always clear sticky radar hover — even mid-drag. Keeping isMinimapHover
+        // after the finger leaves the mesh is what made world LMB look like
+        // "can't select own units" after sliding the minimap.
+        this.clearMinimapHoverState();
+        if (this.minimapDragButton === undefined) {
+            this.pointer.setPointerType(PointerType.Default);
         }
-        this.pointer.setPointerType(PointerType.Default);
+    };
+    private clearMinimapHoverState(): void {
         this.isMinimapHover = false;
         this.minimapHoverTile = undefined;
-    };
+    }
+    /** Live raycast still on the radar mesh (not a stale mouseover flag). */
+    private isLiveMinimapPointerHover(): boolean {
+        const mesh = this.minimapHandler.minimap?.getPointerMesh?.();
+        return !!mesh && !!this.pointerEvents.isHoveringObject?.(mesh);
+    }
     private processMouseMove(event: any): void {
         if (this.minimapDragButton !== undefined) {
             if (!this.hasDragged && !this.isClickRange(event.pointer)) {
@@ -508,6 +565,7 @@ export class WorldInteraction {
             this.currentMode = undefined;
         }
         this.unitSelectionHandler.cancelBoxSelect();
+        this.clearMinimapHoverState();
     }
     private cancelKeyUp(): void {
         if (this.lastKeyboardEvent?.type !== 'keydown') {
