@@ -19,7 +19,13 @@ export default defineConfig({
         },
         fs: {
             allow: ['..']
-        }
+        },
+        proxy: {
+            // Go server: `go run . -addr :8080` (serves /ws + /mix-cache + /game-res).
+            '/ws': { target: 'http://127.0.0.1:8080', ws: true, secure: false },
+            '/mix-cache': { target: 'http://127.0.0.1:8080', secure: false },
+            '/game-res': { target: 'http://127.0.0.1:8080', secure: false },
+        },
     },
     preview: {
         host: '0.0.0.0',

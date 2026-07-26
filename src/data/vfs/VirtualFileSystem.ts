@@ -9,6 +9,7 @@ import { MemArchive } from "./MemArchive";
 import type { VirtualFile } from "./VirtualFile";
 import type { RealFileSystem } from "./RealFileSystem";
 import { isMobileDevice } from "../../util/userAgent";
+import { FLAT_LAZY_MIXES, isFlatLayoutReady } from "../../engine/gameRes/flatMixLayout";
 interface VfsLogger {
     info(message: string, ...args: unknown[]): void;
     warn(message: string, ...args: unknown[]): void;
@@ -17,7 +18,12 @@ interface VfsLogger {
 interface Archive {
     containsFile(filename: string): boolean;
     openFile(filename: string): VirtualFile;
+    releaseFullBuffer?: () => void;
 }
+export type AddMixFileOptions = {
+    lazy?: boolean;
+    onHydrateProgress?: (percent: number) => void;
+};
 export class VirtualFileSystem {
     private rfs: RealFileSystem;
     private logger: VfsLogger;
@@ -122,8 +128,9 @@ export class VirtualFileSystem {
             this.logger.warn(`Could not open "${filename}" via RFS to add as archive.`);
         }
     }
-    async addMixFile(filename: string, options?: { lazy?: boolean }): Promise<void> {
-        if (options?.lazy) {
+    async addMixFile(filename: string, options?: AddMixFileOptions): Promise<void> {
+        const preferLazy = options?.lazy === true || FLAT_LAZY_MIXES.has(filename.toLowerCase());
+        if (preferLazy) {
             if (this.allArchives.has(filename)) {
                 this.logger.info(`Archive "${filename}" already loaded, skipping.`);
                 return;
@@ -133,7 +140,7 @@ export class VirtualFileSystem {
                 const entryCacheBytes = LazyMixFile.defaultEntryCacheBytes(isMobileDevice());
                 const lazyMix = await LazyMixFile.fromFile(rawFile, filename, entryCacheBytes);
                 // Hydrate once so first-frame openFile works even if sync XHR is blocked.
-                await lazyMix.hydrate();
+                await lazyMix.hydrate(options?.onHydrateProgress);
                 this.addArchive(lazyMix, filename);
                 return;
             }
@@ -180,12 +187,18 @@ export class VirtualFileSystem {
     async loadImplicitMixFiles(engineType: EngineType): Promise<void> {
         this.logger.info("Initializing implicit mix files...");
         const YR = engineType === EngineType.YurisRevenge;
+        const flatReady = await this.detectFlatLayout();
         if (YR)
             await this.addMixFile("langmd.mix");
         await this.addMixFile("language.mix");
         if (YR)
             await this.addMixFile("ra2md.mix");
-        await this.addMixFile("ra2.mix");
+        if (flatReady) {
+            this.logger.info("Flat mix layout detected — skipping ra2.mix mount (memory win)");
+        }
+        else {
+            await this.addMixFile("ra2.mix");
+        }
         if (YR)
             await this.addMixFile("cachemd.mix");
         await this.addMixFile("cache.mix");
@@ -218,7 +231,45 @@ export class VirtualFileSystem {
         if (YR)
             await this.addMixFile("multimd.mix");
         await this.addMixFile("multi.mix");
+        if (flatReady) {
+            this.releaseLazyMixFullBuffers([
+                "language.mix",
+                "multi.mix",
+                "cache.mix",
+                "load.mix",
+                "local.mix",
+                "neutral.mix",
+                "audio.mix",
+                "conquer.mix",
+                "generic.mix",
+                "isogen.mix",
+                "cameo.mix",
+            ]);
+        }
         this.logger.info("Finished initializing implicit mix files.");
+    }
+
+    /** True when flat core mixes exist on RFS (ra2.mix parent not required). */
+    async detectFlatLayout(): Promise<boolean> {
+        try {
+            const entries: string[] = [];
+            for await (const entry of this.rfs.getEntries()) {
+                entries.push(entry);
+            }
+            return isFlatLayoutReady(entries);
+        }
+        catch (error) {
+            this.logger.warn("Flat layout detection failed", error);
+            return false;
+        }
+    }
+
+    /** Drop LazyMix full buffers after boot decode; entry LRU + File remain. */
+    releaseLazyMixFullBuffers(names: string[]): void {
+        for (const name of names) {
+            const archive = this.allArchives.get(name);
+            archive?.releaseFullBuffer?.();
+        }
     }
     async loadExtraMixFiles(engineType: EngineType): Promise<void> {
         this.logger.info("Loading extra mix files...");

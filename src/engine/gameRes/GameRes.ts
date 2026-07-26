@@ -1,10 +1,8 @@
 import { DataStream } from '../../data/DataStream';
 import { MixFile } from '../../data/MixFile';
-import { MixEntry } from '../../data/MixEntry';
 import { VirtualFileSystem } from '../../data/vfs/VirtualFileSystem';
-import { Engine, EngineType } from '../Engine';
-import { ResourceLoader, LoaderResult } from '../ResourceLoader';
-import { DownloadError } from '../../network/HttpRequest';
+import { Engine } from '../Engine';
+import { ResourceLoader } from '../ResourceLoader';
 import { AppLogger } from '../../util/logger';
 import { GameResConfig } from './GameResConfig';
 import { ChecksumError } from './importError/ChecksumError';
@@ -20,16 +18,16 @@ import { CanvasUtils } from '../gfx/CanvasUtils';
 import { GameResBoxApi } from '../../gui/component/GameResBoxApi';
 import { GameResSource } from './GameResSource';
 import { RealFileSystem } from '../../data/vfs/RealFileSystem';
-import { ResourceType, resourcesForPrefetch, theaterSpecificResources } from '../resourceConfigs';
+import { ResourceType } from '../resourceConfigs';
 import { CdnResourceLoader } from './CdnResourceLoader';
 import { LocalPrefs, StorageKey } from '../../LocalPrefs';
 import { FileSystemUtil } from './FileSystemUtil';
 import { StorageQuotaError } from '../../data/vfs/StorageQuotaError';
 import { FileNotFoundError as VfsFileNotFoundError } from '../../data/vfs/FileNotFoundError';
 import { IOError } from '../../data/vfs/IOError';
-import { GameResImporter, type ImportProgressCallback } from './GameResImporter';
+import { GameResImporter } from './GameResImporter';
+import { isFlatLayoutReady } from './flatMixLayout';
 import type { Strings } from '../../data/Strings';
-import SplashScreen from '../../gui/component/SplashScreen';
 import type { Viewport } from '../../gui/Viewport';
 import type { Config } from '../../Config';
 import { RealFileSystemDir } from '../../data/vfs/RealFileSystemDir';
@@ -450,7 +448,15 @@ export class GameRes {
         ];
         try {
             const manifest = await loader.loadJson("manifest.json");
-            if (manifest?.format === "original" && Array.isArray(manifest.files)) {
+            if (manifest?.format === "flat" && Array.isArray(manifest.files)) {
+                files = manifest.files.map((f: any) =>
+                    typeof f === "string"
+                        ? { name: f, required: true }
+                        : { name: String(f.name), required: f.required !== false },
+                );
+                console.info(`Using flat game-res manifest (${files.length} files; ra2.mix not synced)`);
+            }
+            else if (manifest?.format === "original" && Array.isArray(manifest.files)) {
                 files = manifest.files.map((f: any) =>
                     typeof f === "string"
                         ? { name: f, required: true }
@@ -637,6 +643,10 @@ export class GameRes {
     private async lookForGameFiles(rfsDir: RealFileSystemDir): Promise<boolean> {
         const entries = await rfsDir.listEntries();
         console.log('[GameRes.lookForGameFiles] Entries in directory:', entries);
+        if (isFlatLayoutReady(entries)) {
+            console.log('[GameRes.lookForGameFiles] Flat mix layout ready (ra2.mix not required)');
+            return true;
+        }
         const requiredFiles = ["language.mix", "multi.mix", "ra2.mix"];
         const lowerEntries = new Set(entries.map((e) => e.toLowerCase()));
         const hasAllFiles = requiredFiles.every((fileName) => lowerEntries.has(fileName.toLowerCase()));
@@ -782,12 +792,24 @@ export class GameRes {
             // Auto-synced community packs often differ from the few official CRCs we hardcode.
             // When originalGameResUrl is set, only verify files exist; don't block on checksum.
             if (this.appConfig.originalGameResUrl) {
-                for (const mixName of ["ra2.mix", "language.mix", "multi.mix"]) {
-                    if (!(await rootDir.containsEntry(mixName))) {
-                        throw new GameResFileNotFoundError(mixName);
-                    }
+                let listed: string[] = [];
+                try {
+                    listed = await rootDir.listEntries();
                 }
-                console.info("Mix presence check OK (checksum skipped for auto-synced resources).");
+                catch {
+                    listed = [];
+                }
+                if (isFlatLayoutReady(listed)) {
+                    console.info("Flat mix presence check OK (checksum skipped; ra2.mix not required).");
+                }
+                else {
+                    for (const mixName of ["ra2.mix", "language.mix", "multi.mix"]) {
+                        if (!(await rootDir.containsEntry(mixName))) {
+                            throw new GameResFileNotFoundError(mixName);
+                        }
+                    }
+                    console.info("Mix presence check OK (checksum skipped for auto-synced resources).");
+                }
             }
             else {
                 await this.checkMixesIntegrity(rootDir);
@@ -1011,7 +1033,7 @@ export class GameRes {
                     }
                     else if (adapterInfo.name === "indexeddb" && checkError.name === "NotFoundError") {
                         console.warn("IndexedDB NotFoundError during browser check, attempting reset...");
-                        await new Promise<void>(resolve => {
+                        await new Promise<void>(_ => {
                             indexedDB.deleteDatabase("fileSystem");
                             this.localPrefs.removeItem(StorageKey.GameRes);
                             console.warn("Reloading page to attempt IndexedDB recovery...");

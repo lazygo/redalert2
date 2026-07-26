@@ -43,7 +43,6 @@
     "debug:lan-map-transfer": "bun scripts/lan-room-map-transfer-flow.ts"
   },
   "dependencies": {
-    "7z-wasm": "^1.1.0",
     "@brakebein/threeoctree": "^2.0.1",
     "@datastructures-js/priority-queue": "^6.3.5",
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -51,6 +50,7 @@
     "@ra2web/pcxfile": "^1.0.1",
     "@ra2web/wavefile": "^1.0.2",
     "@timohausmann/quadtree-ts": "2.2.2",
+    "7z-wasm": "^1.1.0",
     "classnames": "^2.5.1",
     "file-system-access": "^1.0.4",
     "js-logger": "^1.6.1",
@@ -68,6 +68,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",
+    "@types/node": "^26.1.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/sprintf-js": "^1.1.4",
