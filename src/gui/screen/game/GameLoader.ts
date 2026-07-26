@@ -212,10 +212,32 @@ export class GameLoader {
             for (const resourceType of resourceTypes) {
                 Engine.vfs.addArchive(new MixFile(new DataStream(resources.pop(resourceType))), this.cdnResourceLoader.getResourceFileName(resourceType));
             }
-        }
-        else {
             onProgress?.(100);
+            return;
         }
+        // Local / flat: hydrate theater LazyMix packs with real progress (was a no-op 100%).
+        const settings = Engine.getTheaterSettings(Engine.getActiveEngine(), theaterType);
+        const mixes = settings.mixes;
+        if (!mixes.length) {
+            onProgress?.(100);
+            return;
+        }
+        for (let i = 0; i < mixes.length; i++) {
+            cancellationToken?.throwIfCancelled?.();
+            const mixName = mixes[i];
+            const base = (i / mixes.length) * 100;
+            const span = 100 / mixes.length;
+            if (Engine.vfs?.hasArchive(mixName)) {
+                onProgress?.(base + span);
+                continue;
+            }
+            await Engine.vfs!.addMixFile(mixName, {
+                lazy: true,
+                onHydrateProgress: (percent) => onProgress?.(base + (percent / 100) * span),
+            });
+            onProgress?.(base + span);
+        }
+        onProgress?.(100);
     }
     private async createGame(gameId: string, timestamp: number, gameOptions: any, mapFile: any, isSinglePlayer: boolean, botsLib: any): Promise<{
         game: any;

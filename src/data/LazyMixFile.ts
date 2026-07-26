@@ -84,11 +84,47 @@ export class LazyMixFile {
     }
 
     /** Load the entire mix into RAM (same peak as classic MixFile). */
-    async hydrate(): Promise<void> {
+    async hydrate(onProgress?: (percent: number) => void): Promise<void> {
         if (this.fullBuffer) {
+            onProgress?.(100);
             return;
         }
-        this.fullBuffer = await this.file.arrayBuffer();
+        if (!onProgress || typeof this.file.stream !== "function") {
+            this.fullBuffer = await this.file.arrayBuffer();
+            onProgress?.(100);
+            console.info(
+                `[LazyMixFile] hydrated "${this.name}" (${(this.fullBuffer.byteLength / (1024 * 1024)).toFixed(1)}MiB)`,
+            );
+            return;
+        }
+        const total = Math.max(1, this.file.size);
+        const reader = this.file.stream().getReader();
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        let lastPct = -1;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
+            }
+            if (value?.byteLength) {
+                chunks.push(value);
+                received += value.byteLength;
+                const pct = Math.min(99, Math.floor((received / total) * 100));
+                if (pct !== lastPct) {
+                    lastPct = pct;
+                    onProgress(pct);
+                }
+            }
+        }
+        const merged = new Uint8Array(received);
+        let offset = 0;
+        for (const chunk of chunks) {
+            merged.set(chunk, offset);
+            offset += chunk.byteLength;
+        }
+        this.fullBuffer = merged.buffer;
+        onProgress(100);
         console.info(
             `[LazyMixFile] hydrated "${this.name}" (${(this.fullBuffer.byteLength / (1024 * 1024)).toFixed(1)}MiB)`,
         );

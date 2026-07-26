@@ -5,5 +5,6 @@
     { "name": "language.mix", "required": true },
     { "name": "multi.mix", "required": true },
     { "name": "theme.mix", "required": false }
-  ]
+  ],
+  "note": "Source-of-truth mixes only. Nested packs are unpacked by the Go server into mix-cache/."
 }
