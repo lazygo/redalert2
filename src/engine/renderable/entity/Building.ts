@@ -117,6 +117,10 @@ const l = new Map()
 ]);
 export class Building {
     static lampTextures = new Map();
+    static clearLampTextures(): void {
+        Building.lampTextures.forEach((texture: { dispose?: () => void }) => texture.dispose?.());
+        Building.lampTextures.clear();
+    }
     gameObject: any;
     selectionModel: any;
     rules: any;

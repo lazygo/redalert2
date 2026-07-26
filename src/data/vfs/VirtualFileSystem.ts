@@ -8,6 +8,7 @@ import { FileNotFoundError } from "./FileNotFoundError";
 import { MemArchive } from "./MemArchive";
 import type { VirtualFile } from "./VirtualFile";
 import type { RealFileSystem } from "./RealFileSystem";
+import { isMobileDevice } from "../../util/userAgent";
 interface VfsLogger {
     info(message: string, ...args: unknown[]): void;
     warn(message: string, ...args: unknown[]): void;
@@ -129,7 +130,8 @@ export class VirtualFileSystem {
             }
             try {
                 const rawFile = await this.rfs.getRawFile(filename);
-                const lazyMix = await LazyMixFile.fromFile(rawFile, filename);
+                const entryCacheBytes = LazyMixFile.defaultEntryCacheBytes(isMobileDevice());
+                const lazyMix = await LazyMixFile.fromFile(rawFile, filename, entryCacheBytes);
                 // Hydrate once so first-frame openFile works even if sync XHR is blocked.
                 await lazyMix.hydrate();
                 this.addArchive(lazyMix, filename);

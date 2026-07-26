@@ -46,6 +46,11 @@ class TextureUtilsClass {
         texture.colorSpace = (THREE as any).SRGBColorSpace ?? THREE.LinearSRGBColorSpace;
         return texture;
     }
+    /** Drop palette GPU textures retained across matches (call on leave). */
+    static clearCaches(): void {
+        TextureUtilsClass.cache.forEach((texture) => texture.dispose());
+        TextureUtilsClass.cache.clear();
+    }
 }
 export const textureFromPalette = TextureUtilsClass.textureFromPalette.bind(TextureUtilsClass);
 export const textureFromPalettes = TextureUtilsClass.textureFromPalettes.bind(TextureUtilsClass);

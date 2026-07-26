@@ -6,6 +6,8 @@ import { ByteLruCache } from '../util/ByteLruCache';
 import { syncReadBlobSlice } from '../util/syncBlobRead';
 
 const DEFAULT_ENTRY_CACHE_BYTES = 48 * 1024 * 1024;
+/** Mobile theater entry LRU — enough for hot tiles without a 48MiB floor. */
+const MOBILE_ENTRY_CACHE_BYTES = 12 * 1024 * 1024;
 /** Header parse window — RA encrypted indexes fit well under this for stock mixes. */
 const HEADER_PARSE_BYTES = 2 * 1024 * 1024;
 
@@ -47,6 +49,11 @@ export class LazyMixFile {
         this.index = index;
         this.dataStart = dataStart;
         this.entryCache = new ByteLruCache(entryCacheBytes);
+    }
+
+    /** Desktop 48MiB; mobile 12MiB — miss cost is sync slice, not lower render quality. */
+    static defaultEntryCacheBytes(isMobile: boolean): number {
+        return isMobile ? MOBILE_ENTRY_CACHE_BYTES : DEFAULT_ENTRY_CACHE_BYTES;
     }
 
     static async fromFile(

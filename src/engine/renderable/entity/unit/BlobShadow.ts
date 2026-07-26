@@ -16,6 +16,10 @@ export class BlobShadow {
     private lastTileElevation?: number;
     private lastBridgeBelow?: boolean;
     constructor(private gameObject: any, private radius: number, private useMeshInstancing: boolean) { }
+    static clearCaches(): void {
+        BlobShadow.geometries.forEach((geometry) => geometry.dispose());
+        BlobShadow.geometries.clear();
+    }
     get3DObject(): THREE.Mesh | BatchedMesh | undefined {
         return this.obj;
     }
