@@ -331,7 +331,7 @@ export class WorldInteraction {
             return;
         }
         if (event.isTouch) {
-            // Prefer live mobile Ctl hold; also keep any keyboard mods / long-press path.
+            // Prefer live mobile Ctl hold; also keep keyboard Ctrl if already held.
             event.ctrlKey = !!(event.ctrlKey || getMobileTouchCtrl() || this.lastKeyMods?.ctrlKey);
             if (this.lastKeyMods && this.lastKeyMods !== this.lastKeyboardEvent) {
                 event.shiftKey = this.lastKeyMods.shiftKey;
@@ -387,7 +387,6 @@ export class WorldInteraction {
         const executeDefaultClick = event.button === (rightClickMove ? 2 : 0);
         const isClick = this.isClickRange(event.pointer);
         let isDoubleSameClick = false;
-        const isTouchLongPress = isClick && event.isTouch && event.timeStamp - this.lastMouseDownEvent.timeStamp >= 500;
         if (isClick) {
             this.mapHoverHandler.update(event.pointer, true);
         }
@@ -419,7 +418,7 @@ export class WorldInteraction {
             this.unitSelectionHandler.deselectAll();
         }
         if (!boxSelectionHandled && (rightClickMove ? executeDefaultClick : executeDefaultClick || event.button === 0)) {
-            this.handleDefaultClickAction(rightClickMove, executeDefaultClick, isDoubleSameClick, isTouchLongPress, event, hover);
+            this.handleDefaultClickAction(rightClickMove, executeDefaultClick, isDoubleSameClick, event, hover);
             if (this.lastDefaultModeClickDetails) {
                 this.lastDefaultModeClickDetails.selectionHash = this.unitSelectionHandler.getHash();
             }
@@ -536,7 +535,7 @@ export class WorldInteraction {
             this.unitSelectionHandler.updateBoxSelect(event.pointer);
         }
     }
-    private handleDefaultClickAction(rightClickMove: boolean, executeDefaultClick: boolean, allowTypeSelect: boolean, touchForceAttack: boolean, event: any, hover: any): void {
+    private handleDefaultClickAction(rightClickMove: boolean, executeDefaultClick: boolean, allowTypeSelect: boolean, event: any, hover: any): void {
         if (!hover) {
             return;
         }
@@ -546,7 +545,7 @@ export class WorldInteraction {
                 ? ActionFilter.NoSelect
                 : ActionFilter.SelectOnly
             : ActionFilter.All;
-        this.defaultActionHandler.execute(hover, selection, filter, rightClickMove && !executeDefaultClick, allowTypeSelect, touchForceAttack ? { ...event, ctrlKey: true } : event);
+        this.defaultActionHandler.execute(hover, selection, filter, rightClickMove && !executeDefaultClick, allowTypeSelect, event);
     }
     private cancelMouseUp(): void {
         if (this.mousePressed === undefined) {

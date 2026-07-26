@@ -190,29 +190,35 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["GAPILE", new BasicBuilding(12, 1)], // Barracks
     ["CMIN", new Harvester(15, 4, 2)], // Chrono Miner
     ["GADEPT", new BasicBuilding(1, 1, 10000)], // Repair Depot
-    ["GAAIRC", new BasicBuilding(10, 1, 500)], // Airforce Command
-    ["AMRADR", new BasicBuilding(10, 1, 500)], // Airforce Command (USA)
+    ["GAAIRC", new BasicBuilding(12, 2, 400)], // Airforce Command
+    ["AMRADR", new BasicBuilding(12, 2, 400)], // Airforce Command (USA)
 
-    ["GATECH", new BasicBuilding(20, 1, 4000)], // Allied Battle Lab
+    ["GATECH", new BasicBuilding(22, 1, 2800)], // Allied Battle Lab
     ["GAYARD", new BasicBuilding(0, 0, 0)], // Naval Yard, disabled
+    ["GASPYSAT", new BasicBuilding(16, 1, 2000)], // Spy Satellite Uplink
+    ["GAGAP", new BasicBuilding(14, 2, 1500)], // 裂缝产生器 (Gap Generator)
 
-    ["GAPILL", new AntiGroundStaticDefence(2, 1, 7.5, 5)], // Pillbox
-    ["ATESLA", new AntiGroundStaticDefence(2, 1, 10, 3)], // Prism Cannon
-    ["NASAM", new AntiAirStaticDefence(1, 1, 7.5)], // Patriot Missile
+    ["GAPILL", new AntiGroundStaticDefence(3, 2, 7.5, 8)], // Pillbox
+    ["ATESLA", new AntiGroundStaticDefence(4, 2, 10, 6)], // Prism Cannon
+    ["NASAM", new AntiAirStaticDefence(2, 2, 7.5)], // Patriot Missile
     ["GAWALL", new AntiGroundStaticDefence(0, 0, 0, 0)], // Walls
 
     ["E1", new BasicGroundUnit(2, 2, 0.2, 0)], // GI
     ["ENGINEER", new BasicGroundUnit(1, 0, 0)], // Engineer
-    ["SPY", new BasicGroundUnit(0, 0)], // Spy (requested by SpyMission on Savage)
+    ["SPY", new BasicGroundUnit(6, 2, 0, 0)], // Spy — Savage/Allied infiltration
     ["ADOG", new BasicGroundUnit(1, 1, 0, 0)], // Allied Attack Dog
+    ["SNIPE", new BasicGroundUnit(5, 1, 1.5, 0)], // Sniper (Britain)
+    ["TANY", new BasicGroundUnit(8, 1, 3, 0)], // Tanya
+    ["GHOST", new BasicGroundUnit(6, 1, 2, 0)], // SEAL
     ["MTNK", new BasicGroundUnit(10, 3, 2, 0)], // Grizzly Tank
     ["MGTK", new BasicGroundUnit(10, 1, 2.5, 0)], // Mirage Tank
     ["FV", new BasicGroundUnit(5, 2, 0.5, 1)], // IFV
     ["JUMPJET", new BasicAirUnit(10, 1, 1, 1)], // Rocketeer
-    ["ORCA", new BasicAirUnit(7, 1, 2, 0)], // Rocketeer
+    ["ORCA", new BasicAirUnit(8, 2, 2, 0)], // Harrier
+    ["BEAG", new BasicAirUnit(8, 2, 2.5, 0)], // Black Eagle (Korea)
     ["SREF", new ArtilleryUnit(10, 5, 3, 3)], // Prism Tank
     ["CLEG", new BasicGroundUnit(0, 0)], // Chrono Legionnaire (Disabled - we don't handle the warped out phase properly and it tends to bug both bots out)
-    ["SHAD", new BasicGroundUnit(0, 0)], // Nighthawk (Disabled)
+    ["SHAD", new BasicGroundUnit(0, 0)], // Nighthawk (Disabled — transport, not attack)
 
     // Soviet
     ["NAPOWR", new PowerPlant()],
@@ -221,25 +227,28 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["NAHAND", new BasicBuilding(12, 1)], // Barracks
     ["HARV", new Harvester(15, 4, 2)], // War Miner
     ["NADEPT", new BasicBuilding(1, 1, 10000)], // Repair Depot
-    ["NARADR", new BasicBuilding(10, 1, 500)], // Radar
+    ["NARADR", new BasicBuilding(12, 1, 400)], // Radar
     ["NANRCT", new PowerPlant()], // Nuclear Reactor
     ["NAYARD", new BasicBuilding(0, 0, 0)], // Naval Yard, disabled
 
-    ["NATECH", new BasicBuilding(20, 1, 4000)], // Soviet Battle Lab
+    ["NATECH", new BasicBuilding(22, 1, 2800)], // Soviet Battle Lab
+    ["NAPSIS", new BasicBuilding(14, 1, 1500)], // Psychic Sensor (gap / detection)
 
-    ["NALASR", new AntiGroundStaticDefence(2, 1, 7.5, 5)], // Sentry Gun
-    ["NAFLAK", new AntiAirStaticDefence(1, 1, 7.5)], // Flak Cannon
-    ["TESLA", new AntiGroundStaticDefence(2, 1, 10, 3)], // Tesla Coil
+    ["NALASR", new AntiGroundStaticDefence(3, 2, 7.5, 8)], // Sentry Gun
+    ["NAFLAK", new AntiAirStaticDefence(2, 2, 7.5)], // Flak Cannon
+    ["TESLA", new AntiGroundStaticDefence(4, 2, 10, 6)], // Tesla Coil
     ["NAWALL", new AntiGroundStaticDefence(0, 0, 0, 0)], // Walls
 
     ["E2", new BasicGroundUnit(2, 2, 0.2, 0)], // Conscript
     ["SENGINEER", new BasicGroundUnit(1, 0, 0)], // Soviet Engineer
     ["FLAKT", new BasicGroundUnit(2, 2, 0.1, 0.3)], // Flak Trooper
-    ["YURI", new BasicGroundUnit(1, 1, 1, 0)], // Yuri
+    ["YURI", new BasicGroundUnit(7, 1, 2, 0)], // Yuri
+    ["IVAN", new BasicGroundUnit(5, 1, 1.5, 0)], // Crazy Ivan
+    ["DESO", new BasicGroundUnit(6, 1, 2, 0)], // Desolator (Libya)
     ["DOG", new BasicGroundUnit(1, 1, 0, 0)], // Soviet Attack Dog
     ["HTNK", new BasicGroundUnit(10, 3, 3, 0)], // Rhino Tank
     ["APOC", new BasicGroundUnit(6, 1, 5, 0)], // Apocalypse Tank
     ["HTK", new BasicGroundUnit(5, 2, 0.33, 1.5)], // Flak Track
-    ["ZEP", new BasicAirUnit(5, 1, 5, 1)], // Kirov
-    ["V3", new ArtilleryUnit(9, 10, 0, 3)], // V3 Rocket Launcher
+    ["ZEP", new BasicAirUnit(8, 2, 5, 1)], // Kirov
+    ["V3", new ArtilleryUnit(10, 10, 0, 4)], // V3 Rocket Launcher
 ]);

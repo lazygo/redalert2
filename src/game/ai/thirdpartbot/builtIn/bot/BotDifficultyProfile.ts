@@ -27,6 +27,12 @@ export interface BotDifficultyProfile {
     counterCompositions?: boolean;
     /** Send Allied spies to infiltrate enemy production / tech. */
     useSpies?: boolean;
+    /** Proactively fortify base (Tesla/Prism/AA/Gap Generator 裂缝产生器 / SpySat etc.). */
+    fortifyBase?: boolean;
+    /** Field specialists: Tanya, Sniper, Yuri, Ivan, Desolator, etc. when tech allows. */
+    useSpecialists?: boolean;
+    /** Prefer stronger air / artillery attack compositions (Kirov, Black Eagle, V3, Harriers). */
+    boostAir?: boolean;
 }
 
 /** Current BuiltInBot defaults — used for AI-简单. */
@@ -86,6 +92,9 @@ export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
     enableNavy: true,
     counterCompositions: true,
     useSpies: true,
+    fortifyBase: true,
+    useSpecialists: true,
+    boostAir: true,
 };
 
 export function scaleCompositionCounts<T extends { minimumUnits: number; maximumUnits: number }>(

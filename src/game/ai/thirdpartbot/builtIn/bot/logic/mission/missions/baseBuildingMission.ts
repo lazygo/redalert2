@@ -8,6 +8,7 @@ import {
     DEFAULT_BUILDING_PRIORITY,
     getDefaultPlacementLocation,
 } from "../../building/buildingRules";
+import { applySavageStructurePriority } from "../../building/savageBuildingPolicy";
 import { queueTypeToName } from "../../building/queueController";
 
 // Legacy mission encompassing the old "build queue" logic.
@@ -72,7 +73,11 @@ export class BaseBuildingMission extends Mission {
                 return context.botProfile?.enableNavy ? 9 : 0;
             }
             let logic = BUILDING_NAME_TO_RULES.get(option.name)!;
-            return logic.getPriority(game, playerStatus, option, threatCache);
+            let priority = logic.getPriority(game, playerStatus, option, threatCache);
+            if (context.botProfile?.fortifyBase) {
+                priority = applySavageStructurePriority(option.name, priority, game, playerStatus);
+            }
+            return priority;
         } else {
             // Fallback priority when there are no rules.
             return (

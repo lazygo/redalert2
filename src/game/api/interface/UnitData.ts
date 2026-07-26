@@ -25,6 +25,8 @@ export interface UnitData extends GameObjectData {
     turretNo?: number;
     garrisonUnitCount?: number;
     garrisonUnitsMax?: number;
+    /** True when this is a bridge repair hut whose bridge is currently destroyed. */
+    needsBridgeRepair?: boolean;
     passengerSlotCount?: number;
     passengerSlotMax?: number;
     isIdle: boolean;
