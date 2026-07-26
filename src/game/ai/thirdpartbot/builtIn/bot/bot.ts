@@ -9,6 +9,10 @@ import { SupabotContext } from "./logic/common/context";
 import { Strategy } from "./strategy/strategy";
 import { DefaultStrategy } from "./strategy/defaultStrategy";
 import { BaseBuildingMission } from "./logic/mission/missions/baseBuildingMission";
+import {
+    SIMPLE_BOT_PROFILE,
+    type BotDifficultyProfile,
+} from "./BotDifficultyProfile";
 
 const DEBUG_STATE_UPDATE_INTERVAL_SECONDS = 6;
 
@@ -23,9 +27,11 @@ export class BuiltInBot extends Bot {
     private tickOfLastAttackOrder: number = 0;
     private lastDeployAttemptTick: number = -9999;
     private deployAttemptCount: number = 0;
+    private lastCheatCreditsTick: number = 0;
 
     private missionController: MissionController | null = null;
     private matchAwareness: MatchAwareness | null = null;
+    private readonly profile: BotDifficultyProfile;
 
     // Messages to display in visualisation mode only.
     public _debugMessages: string[] = [];
@@ -37,15 +43,20 @@ export class BuiltInBot extends Bot {
         country: Countries,
         private tryAllyWith: string[] = [],
         private enableLogging = true,
-        private strategy: Strategy = new DefaultStrategy(),
+        strategy?: Strategy,
+        profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE,
     ) {
         super(name, country);
+        this.profile = profile;
+        this.strategy = strategy ?? new DefaultStrategy(profile);
         this.queueController = new QueueController();
     }
 
+    private strategy: Strategy;
+
     override onGameStart(game: GameApi) {
         const gameRate = game.getTickRate();
-        const botApm = 300;
+        const botApm = this.profile.botApm;
         const botRate = botApm / 60;
         this.tickRatio = Math.ceil(gameRate / botRate);
 
@@ -99,7 +110,7 @@ export class BuiltInBot extends Bot {
             const myPlayer = game.getPlayerData(this.name);
             const conYards = game.getVisibleUnits(this.name, 'self', (r) => r.constructionYard);
             const allUnits = game.getVisibleUnits(this.name, 'self');
-            console.log(`[BuiltInBot] "${this.name}" tick=${game.getCurrentTick()} credits=${myPlayer.credits} units=${allUnits.length} conyards=${conYards.length}`);
+            console.log(`[BuiltInBot] "${this.name}" profile=${this.profile.id} tick=${game.getCurrentTick()} credits=${myPlayer.credits} units=${allUnits.length} conyards=${conYards.length}`);
         }
 
         let threatCache = this.matchAwareness.getThreatCache();
@@ -110,6 +121,7 @@ export class BuiltInBot extends Bot {
 
         if (game.getCurrentTick() % this.tickRatio! === 0) {
             this.tryInitialMcvDeploy(game);
+            this.maybeGrantCheatCredits(game);
 
             try {
                 this.matchAwareness.onAiUpdate(this.context);
@@ -155,6 +167,20 @@ export class BuiltInBot extends Bot {
                 this.logBotStatus(message),
             );
         }
+    }
+
+    private maybeGrantCheatCredits(game: GameApi): void {
+        const interval = this.profile.cheatCreditsIntervalTicks;
+        const amount = this.profile.cheatCreditsAmount;
+        if (!interval || !amount) {
+            return;
+        }
+        const tick = game.getCurrentTick();
+        if (tick < this.lastCheatCreditsTick + interval) {
+            return;
+        }
+        this.lastCheatCreditsTick = tick;
+        game.grantCredits?.(this.name, amount);
     }
 
     private tryInitialMcvDeploy(game: GameApi): void {

@@ -249,15 +249,20 @@ function generateTarget(
 }
 
 // Number of ticks between attacking visible targets.
-const VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS = 60;
+const DEFAULT_VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS = 60;
 
 // Number of ticks between attacking "bases" (enemy starting locations).
-const BASE_ATTACK_COOLDOWN_TICKS = 600;
+const DEFAULT_BASE_ATTACK_COOLDOWN_TICKS = 600;
 
 const ATTACK_MISSION_INITIAL_PRIORITY = 1;
 
 export class AttackMissionFactory {
-    constructor(private lastAttackAt: number = -VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS) {}
+    constructor(
+        private lastAttackAt: number = -DEFAULT_VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS,
+        private visibleAttackCooldownTicks: number = DEFAULT_VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS,
+        private baseAttackCooldownTicks: number = DEFAULT_BASE_ATTACK_COOLDOWN_TICKS,
+        private maxPreparingAttacks: number = 2,
+    ) {}
 
     getName(): string {
         return "AttackMissionFactory";
@@ -275,24 +280,24 @@ export class AttackMissionFactory {
             return;
         }
 
-        if (game.getCurrentTick() < this.lastAttackAt + VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS) {
+        if (game.getCurrentTick() < this.lastAttackAt + this.visibleAttackCooldownTicks) {
             return;
         }
 
-        // Limit concurrent preparing attacks to 2.
+        // Limit concurrent preparing attacks.
         const preparingCount = missionController
             .getMissions()
             .filter(
                 (mission): mission is AttackMission =>
                     mission instanceof AttackMission && mission.getState() === AttackMissionState.Preparing,
             ).length;
-        if (preparingCount >= 2) {
+        if (preparingCount >= this.maxPreparingAttacks) {
             return;
         }
 
         const attackRadius = 10;
 
-        const includeEnemyBases = game.getCurrentTick() > this.lastAttackAt + BASE_ATTACK_COOLDOWN_TICKS;
+        const includeEnemyBases = game.getCurrentTick() > this.lastAttackAt + this.baseAttackCooldownTicks;
 
         const attackArea = generateTarget(game, playerData, matchAwareness, includeEnemyBases);
 

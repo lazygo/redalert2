@@ -2,12 +2,17 @@ export function isHumanPlayerInfo(info: any): boolean {
     return "name" in info;
 }
 export enum AiDifficulty {
+    /** AI-冷酷 — aggressive BuiltInBot. */
     Brutal = 0,
     Medium = 1,
+    /** AI-弱智 — training dummy (DummyBot). */
     Easy = 2,
     MediumSea = 3,
+    /** AI-简单 — legacy BuiltInBot defaults. */
     Normal = 4,
     Custom = 5,
+    /** AI-普通 — enhanced BuiltInBot. */
+    Hard = 6,
 }
 export interface HumanPlayerInfo {
     name: string;
