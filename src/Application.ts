@@ -167,7 +167,6 @@ export class Application {
             console.log('[Application] Verification: Default Locale from config:', this.config.defaultLocale);
             console.log('[Application] Verification: Viewport Width from config:', this.config.viewport.width);
             console.log('[Application] Verification: Dev Mode from config:', this.config.devMode);
-            console.log('[Application] Verification: Servers URL from config:', this.config.serversUrl);
         }
         catch (error) {
             console.error('[Application] Failed to parse config:', error);

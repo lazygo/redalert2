@@ -481,41 +481,63 @@ export class Gui {
                 console.warn('Could not check music directory:', error);
                 hasMusicDir = false;
             }
+            const musicAudioSystemAdapter = {
+                playMusicFile: async (file: any, repeat: boolean, onEnded?: () => void): Promise<boolean> => {
+                    try {
+                        await this.audioSystem!.playMusicFile(file, repeat, onEnded);
+                        return true;
+                    }
+                    catch (error) {
+                        console.error('Failed to play music file:', error);
+                        return false;
+                    }
+                },
+                playMusicUrl: async (url: string, repeat: boolean, onEnded?: () => void): Promise<boolean> => {
+                    try {
+                        await this.audioSystem!.playMusicUrl(url, repeat, onEnded);
+                        return true;
+                    }
+                    catch (error) {
+                        console.error('Failed to play music url:', error);
+                        return false;
+                    }
+                },
+                fadeOutAndStopMusic: async (durationMs?: number): Promise<void> => {
+                    await this.audioSystem!.fadeOutAndStopMusic(durationMs);
+                },
+                stopMusic: () => this.audioSystem!.stopMusic()
+            };
+            let musicSpecs: MusicSpecs;
+            let themeFiles: { get(filename: string): Promise<any> };
             if (hasMusicDir) {
                 const themeIniFileName = Engine.getFileNameVariant('theme.ini');
                 const themeIni = Engine.getIni(themeIniFileName);
-                const musicSpecs = new MusicSpecs(themeIni);
-                const musicAudioSystemAdapter = {
-                    playMusicFile: async (file: any, repeat: boolean, onEnded?: () => void): Promise<boolean> => {
-                        try {
-                            await this.audioSystem!.playMusicFile(file, repeat, onEnded);
-                            return true;
-                        }
-                        catch (error) {
-                            console.error('Failed to play music file:', error);
-                            return false;
-                        }
-                    },
-                    stopMusic: () => this.audioSystem!.stopMusic()
-                };
-                this.music = new Music(musicAudioSystemAdapter, Engine.getThemes(), musicSpecs);
-                const musicOptions = this.localPrefs.getItem(StorageKey.MusicOpts);
-                if (musicOptions) {
-                    try {
-                        this.music.unserializeOptions(musicOptions);
-                        console.log('[Gui] Loaded music options from local storage');
-                    }
-                    catch (error) {
-                        console.warn('Failed to read music options from local storage', error);
-                    }
-                }
-                const debugRoot = ((window as any).__ra2debug ??= {});
-                debugRoot.music = this.music;
-                console.log('[Gui] Music system initialized');
+                musicSpecs = new MusicSpecs(themeIni);
+                themeFiles = Engine.getThemes();
+                console.log('[Gui] Music system initialized with theme directory');
             }
             else {
-                console.warn('[Gui] No music directory found - music system disabled');
+                musicSpecs = new MusicSpecs({
+                    getSection: () => undefined,
+                });
+                themeFiles = {
+                    get: async () => undefined,
+                };
+                console.warn('[Gui] No music directory found - menu BGM only');
             }
+            this.music = new Music(musicAudioSystemAdapter, themeFiles, musicSpecs);
+            const musicOptions = this.localPrefs.getItem(StorageKey.MusicOpts);
+            if (musicOptions) {
+                try {
+                    this.music.unserializeOptions(musicOptions);
+                    console.log('[Gui] Loaded music options from local storage');
+                }
+                catch (error) {
+                    console.warn('Failed to read music options from local storage', error);
+                }
+            }
+            const debugRoot = ((window as any).__ra2debug ??= {});
+            debugRoot.music = this.music;
         }
         catch (error) {
             console.error('[Gui] Failed to initialize music system:', error);

@@ -6,10 +6,7 @@ export enum ScreenType {
 export enum MainMenuScreenType {
     Home = 0,
     Skirmish = 1,
-    QuickGame = 2,
     CustomGame = 3,
-    Login = 4,
-    NewAccount = 5,
     Lobby = 6,
     MapSelection = 7,
     Ladder = 8,

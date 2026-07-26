@@ -50,7 +50,6 @@ import { MapSupport } from '@/engine/MapSupport';
 import { OBS_COUNTRY_ID } from '@/game/gameopts/constants';
 import { MainMenuRoute } from '@/gui/screen/mainMenu/MainMenuRoute';
 import { NavigationGuard } from '@/util/NavigationGuard';
-import { RootRoute } from '@/gui/screen/RootRoute';
 import { ChatHistory } from '@/gui/chat/ChatHistory';
 import { PingMonitor } from '@/gui/screen/game/PingMonitor';
 import { SidebarModel } from '@/gui/screen/game/component/hud/viewmodel/SidebarModel';
@@ -132,7 +131,7 @@ export class GameScreen extends RootScreen {
         this.vxlGeometryPool?.setModelQuality?.(this.generalOptions?.graphics?.models?.value);
         this.pointer.lock();
         this.pointer.setVisible(false);
-        await this.music?.play(MusicType.Loading);
+        // Keep menu BGM through loading; fade out when the match actually starts.
         const cancellationTokenSource = new CancellationTokenSource();
         this.disposables.add(() => cancellationTokenSource.cancel());
         const cancellationToken = cancellationTokenSource.token;
@@ -157,14 +156,11 @@ export class GameScreen extends RootScreen {
             gameOpts = { ...lanLaunch.gameOpts };
         }
         else {
-            const credentials = this.wolService.getCredentials();
+            const credentials = this.wolService?.getCredentials?.();
             if (!credentials || credentials.user !== playerName) {
                 this.localPrefs.removeItem(StorageKey.LastConnection);
                 this.controller?.goToScreen(ScreenType.MainMenuRoot, {
-                    route: new MainMenuRoute(MainMenuScreenType.Login, {
-                        forceUser: playerName,
-                        afterLogin: (_user: any) => new RootRoute('Game', params)
-                    })
+                    route: new MainMenuRoute(MainMenuScreenType.Home, undefined),
                 });
                 return;
             }
@@ -897,7 +893,12 @@ export class GameScreen extends RootScreen {
             this.loadingScreenApi?.dispose();
             this.loadingScreenApi = undefined;
         }
-        this.music?.play(MusicType.Normal);
+        this.music?.fadeOutAndStop(2500).then(() => {
+            this.music?.play(MusicType.Normal);
+        }).catch((error: unknown) => {
+            console.error('[GameScreen] Failed to fade out menu music:', error);
+            this.music?.play(MusicType.Normal);
+        });
         const evaSpecs = new EvaSpecs(SideType.GDI).readIni(Engine.getIni('eva.ini'));
         const eva = new Eva(evaSpecs, this.sound, this.renderer);
         eva.init();

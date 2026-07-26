@@ -286,9 +286,7 @@ export class LobbyScreen extends MainMenuScreen {
         };
         this.handleGameStart = (event: any) => {
             const username = this.wolCon.getCurrentUser();
-            const fallbackRoute = new MainMenuRoute(ScreenType.Login, {
-                afterLogin: (messages: any[]) => new MainMenuRoute(ScreenType.CustomGame, { messages }),
-            });
+            const fallbackRoute = new MainMenuRoute(ScreenType.Home, undefined);
             if (this.hostMode) {
                 const gameOpts = this.frozenGameOpts ?? this.gameOpts;
                 const mapTransfer = [...this.playerHasMapStatus.values()].includes(WolHasMapStatus.MapTransfer);

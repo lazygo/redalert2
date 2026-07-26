@@ -64,9 +64,6 @@ export class Config {
     get defaultLocale(): string {
         return this.generalData.getString("defaultLanguage", "en-US");
     }
-    get serversUrl(): string {
-        return this.generalData.getString("serversUrl", "servers.ini");
-    }
     get gameresBaseUrl(): string | undefined {
         const url = this.generalData.getString("gameresBaseUrl");
         return url === "" ? undefined : url;
@@ -107,16 +104,6 @@ export class Config {
     get modSdkUrl(): string | undefined {
         const url = this.generalData.getString("modSdkUrl");
         return url.length > 0 ? url : undefined;
-    }
-    get breakingNewsUrl(): string | undefined {
-        const url = this.generalData.getString("breakingNewsUrl");
-        return url.length > 0 ? url : undefined;
-    }
-    get quickMatchEnabled(): boolean {
-        return this.generalData.getBool("quickMatchEnabled");
-    }
-    get unrankedQueueEnabled(): boolean {
-        return this.generalData.getBool("unrankedQueueEnabled", true);
     }
     get botsEnabled(): boolean {
         return this.generalData.getBool("botsEnabled");

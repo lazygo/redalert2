@@ -18,17 +18,15 @@ export class HomeScreen implements Screen {
     private messageBoxApi: MessageBoxApi;
     private appVersion: string;
     private storageEnabled: boolean;
-    private quickMatchEnabled: boolean;
     private fullScreen?: FullScreen;
     private controller?: MainMenuController;
     public title: string;
     public musicType: MusicType;
-    constructor(strings: Strings, messageBoxApi: MessageBoxApi, appVersion: string, storageEnabled: boolean = false, quickMatchEnabled: boolean = false, fullScreen?: FullScreen) {
+    constructor(strings: Strings, messageBoxApi: MessageBoxApi, appVersion: string, storageEnabled: boolean = false, fullScreen?: FullScreen) {
         this.strings = strings;
         this.messageBoxApi = messageBoxApi;
         this.appVersion = appVersion;
         this.storageEnabled = storageEnabled;
-        this.quickMatchEnabled = quickMatchEnabled;
         this.fullScreen = fullScreen;
         this.title = this.strings.get("GUI:MainMenu") || "Main Menu";
         this.musicType = MusicType.Intro;
@@ -161,7 +159,7 @@ export class HomeScreen implements Screen {
     onUnstack(): void {
         this.onEnter();
     }
-    update(deltaTime: number): void {
+    update(_deltaTime: number): void {
     }
     destroy(): void {
     }

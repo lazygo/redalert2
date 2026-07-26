@@ -19,8 +19,10 @@ interface AudioFile {
 }
 interface MusicState {
     source: MediaElementAudioSourceNode;
+    gain: GainNode;
     playing: boolean;
     onEnd?: () => void;
+    objectUrl?: string;
 }
 export class AudioSystem {
     private mixer: Mixer;
@@ -31,6 +33,7 @@ export class AudioSystem {
     private disposables = new CompositeDisposable();
     private soundsPlaying = new Set<AudioBufferSourceNode>();
     private musicState?: MusicState;
+    private musicFadeToken = 0;
     constructor(mixer: Mixer, audioBufferCacheLimit = 100) {
         this.mixer = mixer;
         this.audioBufferCacheLimit = audioBufferCacheLimit;
@@ -291,18 +294,76 @@ export class AudioSystem {
         this.removeSuspendedSounds();
         this.stopMusic();
         const musicState = this.musicState ?? this.initMusicNode();
+        this.resetMusicGain(musicState);
         const audioElement = musicState.source.mediaElement;
         audioElement.loop = repeat;
         const objectUrl = URL.createObjectURL(file.asFile());
+        musicState.objectUrl = objectUrl;
         audioElement.src = objectUrl;
-        audioElement.onended = audioElement.onpause = () => {
-            URL.revokeObjectURL(objectUrl);
-        };
         if (onEnded) {
             musicState.onEnd = onEnded;
             audioElement.addEventListener("ended", musicState.onEnd, { once: true });
         }
         await this.playOrResumeMusic();
+    }
+    async playMusicUrl(url: string, repeat: boolean, onEnded?: () => void): Promise<void> {
+        if (!this.isInitialized()) {
+            throw new Error("Can't play audio file because audio system is not initialized");
+        }
+        await this.ensureResumed();
+        this.removeSuspendedSounds();
+        this.stopMusic();
+        const musicState = this.musicState ?? this.initMusicNode();
+        this.resetMusicGain(musicState);
+        const audioElement = musicState.source.mediaElement;
+        audioElement.loop = repeat;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch music url "${url}": ${response.status}`);
+        }
+        const objectUrl = URL.createObjectURL(await response.blob());
+        musicState.objectUrl = objectUrl;
+        audioElement.src = objectUrl;
+        if (onEnded) {
+            musicState.onEnd = onEnded;
+            audioElement.addEventListener("ended", musicState.onEnd, { once: true });
+        }
+        await this.playOrResumeMusic();
+    }
+    async fadeOutAndStopMusic(durationMs: number = 2500): Promise<void> {
+        const token = ++this.musicFadeToken;
+        const musicState = this.musicState;
+        if (!musicState?.playing) {
+            this.stopMusic();
+            return;
+        }
+        const audioContext = this.audioContext;
+        if (!audioContext || durationMs <= 0) {
+            this.stopMusic();
+            return;
+        }
+        const gainParam = musicState.gain.gain;
+        const now = audioContext.currentTime;
+        const durationSec = durationMs / 1000;
+        gainParam.cancelScheduledValues(now);
+        gainParam.setValueAtTime(gainParam.value, now);
+        gainParam.linearRampToValueAtTime(0, now + durationSec);
+        await new Promise<void>((resolve) => setTimeout(resolve, durationMs));
+        if (token !== this.musicFadeToken) {
+            return;
+        }
+        this.stopMusic();
+        this.resetMusicGain(musicState);
+    }
+    private resetMusicGain(musicState: MusicState): void {
+        const audioContext = this.audioContext;
+        if (!audioContext) {
+            return;
+        }
+        const gainParam = musicState.gain.gain;
+        const now = audioContext.currentTime;
+        gainParam.cancelScheduledValues(now);
+        gainParam.setValueAtTime(1, now);
     }
     private initMusicNode(): MusicState {
         const audioContext = this.audioContext!;
@@ -311,10 +372,11 @@ export class AudioSystem {
         const panNode = audioContext.createStereoPanner();
         panNode.pan.value = 0;
         const audioElement = document.createElement("audio");
+        audioElement.preload = "auto";
         audioElement.src = SILENT_MP3;
         audioElement.loop = true;
         const sourceNode = audioContext.createMediaElementSource(audioElement);
-        this.musicState = { source: sourceNode, playing: false };
+        this.musicState = { source: sourceNode, gain: gainNode, playing: false };
         sourceNode.addEventListener("ended", () => {
             this.musicState!.playing = false;
         });
@@ -337,13 +399,18 @@ export class AudioSystem {
         }
     }
     stopMusic(): void {
-        if (this.musicState?.playing) {
+        this.musicFadeToken += 1;
+        if (this.musicState) {
             try {
                 if (this.musicState.onEnd) {
                     this.musicState.source.mediaElement.removeEventListener("ended", this.musicState.onEnd);
                 }
                 this.musicState.source.mediaElement.pause();
                 this.musicState.source.mediaElement.src = SILENT_MP3;
+                if (this.musicState.objectUrl) {
+                    URL.revokeObjectURL(this.musicState.objectUrl);
+                    this.musicState.objectUrl = undefined;
+                }
                 this.musicState.playing = false;
                 this.musicState.onEnd = undefined;
             }
