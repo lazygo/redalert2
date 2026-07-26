@@ -106,6 +106,7 @@ interface Target {
     obj?: GameObject;
 }
 interface WeaponRules {
+    neverUse: any;
     name: string;
     warhead: string;
     projectile: string;

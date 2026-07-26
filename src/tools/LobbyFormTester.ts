@@ -170,7 +170,7 @@ export class LobbyFormTester {
                 superWeapons: true,
                 buildOffAlly: true,
                 destroyableBridges: true,
-                multiEngineer: false,
+                multiEngineer: true,
                 multiEngineerCount: 3,
                 noDogEngiKills: false,
                 gameSpeed: 6,
