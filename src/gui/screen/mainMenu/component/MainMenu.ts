@@ -91,7 +91,9 @@ export class MainMenu extends UiObject {
         this.createSidebarButtons(this.computeSidebarButtonsViewport(sidebarImage));
         this.updateButtons(this.sidebarButtonsRawConfigs ?? []);
         if (!this.sidebarCollapsed) {
-            this.showButtons();
+            // New slot runners start collapsed — snap expand instead of animate,
+            // otherwise showButtons(true) early-returns and sprites stay retracted.
+            this.showButtons(false);
         }
     }
     setContentComponent(component?: UiObject): void {
@@ -140,6 +142,7 @@ export class MainMenu extends UiObject {
         const hasBottomButton = !!buttons.find((btn) => !!btn.isBottom);
         this.setSlots(buttons.length - (hasBottomButton ? 1 : 0), hasBottomButton, mpSlotEnabled);
         this.updateSidebarMpContent();
+        this.sidebarButtonConfigs = [];
         this.sidebarButtons.forEach((btn) => btn.applyOptions((options: any) => (options.buttonConfig = undefined)));
         buttons.forEach((buttonConfig, index) => {
             const slotIndex = buttonConfig.isBottom
