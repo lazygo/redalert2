@@ -32,7 +32,7 @@ export class BaseBuildingMission extends Mission {
         const optionWithPriority = options.map((option) => {
             return {
                 option,
-                priority: this.getPriorityForBuildingOption(option, game, playerData, threatCache),
+                priority: this.getPriorityForBuildingOption(option, game, playerData, threatCache, context),
             };
         });
 
@@ -64,8 +64,13 @@ export class BaseBuildingMission extends Mission {
         game: GameApi,
         playerStatus: PlayerData,
         threatCache: GlobalThreat | null,
+        context: MissionContext,
     ) {
         if (BUILDING_NAME_TO_RULES.has(option.name)) {
+            // Naval yards stay disabled unless the difficulty profile opts in (Savage).
+            if (option.name === "GAYARD" || option.name === "NAYARD") {
+                return context.botProfile?.enableNavy ? 9 : 0;
+            }
             let logic = BUILDING_NAME_TO_RULES.get(option.name)!;
             return logic.getPriority(game, playerStatus, option, threatCache);
         } else {

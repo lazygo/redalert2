@@ -13,12 +13,14 @@ export const aiUiNames = new Map<AiDifficulty, string>()
     .set(AiDifficulty.Normal, "GUI:AISimple")
     .set(AiDifficulty.Hard, "GUI:AINormal")
     .set(AiDifficulty.Brutal, "GUI:AIBrutal")
+    .set(AiDifficulty.Savage, "GUI:AISavage")
     .set(AiDifficulty.Custom, "GUI:AICustom");
 export const aiUiTooltips = new Map<AiDifficulty, string>()
     .set(AiDifficulty.Easy, "GUI:AIDummy:Tooltip")
     .set(AiDifficulty.Normal, "GUI:AISimple:Tooltip")
     .set(AiDifficulty.Hard, "GUI:AINormal:Tooltip")
     .set(AiDifficulty.Brutal, "GUI:AIBrutal:Tooltip")
+    .set(AiDifficulty.Savage, "GUI:AISavage:Tooltip")
     .set(AiDifficulty.Custom, "GUI:AICustom:Tooltip");
 export const RANDOM_COUNTRY_UI_NAME = "GUI:RandomEx";
 export const RANDOM_COUNTRY_UI_TOOLTIP = "STT:PlayerSideRandom";

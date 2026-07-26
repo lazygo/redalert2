@@ -133,6 +133,8 @@
     "gui:ainormal:tooltip": "更积极的建设与进攻，编制更大。",
     "gui:aibrutal": "冷酷",
     "gui:aibrutal:tooltip": "高频进攻、积极扩张、经济发达。",
+    "gui:aisavage": "残暴",
+    "gui:aisavage:tooltip": "比冷酷更强：海陆空多兵种、按敌方编制针对性出兵，并会使用间谍渗透等高级手段。",
     "gui:aicustom": "AI-自定义",
     "gui:aicustom:tooltip": "使用上传的自定义AI机器人脚本。",
     "gui:botupload": "上传AI机器人",

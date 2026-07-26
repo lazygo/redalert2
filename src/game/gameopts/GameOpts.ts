@@ -13,6 +13,8 @@ export enum AiDifficulty {
     Custom = 5,
     /** AI-普通 — enhanced BuiltInBot. */
     Hard = 6,
+    /** AI-残暴 — multi-domain counters + spies; harder than Brutal. */
+    Savage = 7,
 }
 export interface HumanPlayerInfo {
     name: string;

@@ -1,9 +1,9 @@
 /**
  * Tunable profiles for BuiltInBot difficulties.
- * Simple = legacy default behaviour; Normal/Brutal scale aggression & economy.
+ * Simple = legacy default behaviour; Normal/Brutal/Savage scale aggression & tactics.
  */
 export interface BotDifficultyProfile {
-    id: 'simple' | 'normal' | 'brutal';
+    id: 'simple' | 'normal' | 'brutal' | 'savage';
     /** Approximate actions per minute (tick throttling). */
     botApm: number;
     /** Ticks between attacking visible targets. */
@@ -21,6 +21,12 @@ export interface BotDifficultyProfile {
     /** If > 0, grant cheat credits every N ticks. */
     cheatCreditsIntervalTicks: number;
     cheatCreditsAmount: number;
+    /** Build naval yards and include naval attack compositions when available. */
+    enableNavy?: boolean;
+    /** Prefer compositions that counter observed enemy air/ground mix. */
+    counterCompositions?: boolean;
+    /** Send Allied spies to infiltrate enemy production / tech. */
+    useSpies?: boolean;
 }
 
 /** Current BuiltInBot defaults — used for AI-简单. */
@@ -63,6 +69,23 @@ export const BRUTAL_BOT_PROFILE: BotDifficultyProfile = {
     conyardPackCooldownTicks: 15 * 60 * 3,
     cheatCreditsIntervalTicks: 15 * 20, // every ~20s at 15 tick/s
     cheatCreditsAmount: 800,
+};
+
+/** Harder than Brutal — multi-domain + counters + spies — AI-残暴. */
+export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
+    id: 'savage',
+    botApm: 480,
+    visibleAttackCooldownTicks: 18,
+    baseAttackCooldownTicks: 140,
+    maxPreparingAttacks: 5,
+    compositionSizeMultiplier: 2.2,
+    expandBeforeTicks: 15 * 60 * 1.8,
+    conyardPackCooldownTicks: 15 * 60 * 2,
+    cheatCreditsIntervalTicks: 15 * 12, // every ~12s
+    cheatCreditsAmount: 1200,
+    enableNavy: true,
+    counterCompositions: true,
+    useSpies: true,
 };
 
 export function scaleCompositionCounts<T extends { minimumUnits: number; maximumUnits: number }>(

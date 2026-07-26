@@ -312,6 +312,7 @@ export class PregameController {
         names.set('Normal', aiUiNames.get(AiDifficulty.Normal)!);
         names.set('Hard', aiUiNames.get(AiDifficulty.Hard)!);
         names.set('Brutal', aiUiNames.get(AiDifficulty.Brutal)!);
+        names.set('Savage', aiUiNames.get(AiDifficulty.Savage)!);
         const uploadedBots = BotRegistry.getInstance().getUploadedBots();
         if (uploadedBots.length > 0) {
             for (const bot of uploadedBots) {
@@ -642,6 +643,7 @@ export class PregameController {
                 ai.difficulty !== AiDifficulty.Normal &&
                 ai.difficulty !== AiDifficulty.Hard &&
                 ai.difficulty !== AiDifficulty.Brutal &&
+                ai.difficulty !== AiDifficulty.Savage &&
                 ai.difficulty !== AiDifficulty.Custom
             ) {
                 ai.difficulty = AiDifficulty.Easy;
