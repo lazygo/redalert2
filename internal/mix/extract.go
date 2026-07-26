@@ -15,11 +15,11 @@ var ExtractFromRA2 = []string{
 	"isotemp.mix", "temperat.mix", "tem.mix",
 	"isosnow.mix", "snow.mix", "sno.mix",
 	"isourb.mix", "urb.mix", "urban.mix",
-	"sidec01.mix", "sidec02.mix", "sidec01cd.mix", "sidec02cd.mix",
+	"sidec01.mix", "sidec02.mix",
 }
 
 var ExtractFromLanguage = []string{
-	"audio.mix", "cameo.mix", "cameocd.mix",
+	"audio.mix", "cameo.mix",
 }
 
 var ExtractFromAudio = []string{
@@ -50,7 +50,6 @@ func BuildFlatManifestJSON() ([]byte, error) {
 		{Name: "generic.mix", Required: true},
 		{Name: "isogen.mix", Required: true},
 		{Name: "cameo.mix", Required: true},
-		{Name: "cameocd.mix", Required: false},
 		{Name: "audio.bag", Required: true},
 		{Name: "audio.idx", Required: true},
 		{Name: "isotemp.mix", Required: false},
@@ -64,8 +63,6 @@ func BuildFlatManifestJSON() ([]byte, error) {
 		{Name: "urban.mix", Required: false},
 		{Name: "sidec01.mix", Required: true},
 		{Name: "sidec02.mix", Required: true},
-		{Name: "sidec01cd.mix", Required: false},
-		{Name: "sidec02cd.mix", Required: false},
 	}
 	body := map[string]any{
 		"format":  "flat",
