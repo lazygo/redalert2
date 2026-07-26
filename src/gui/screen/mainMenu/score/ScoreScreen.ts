@@ -79,13 +79,7 @@ export class ScoreScreen extends MainMenuScreen {
         const goBack = () => {
             this.controller?.goToScreen(returnTo.screenType, returnTo.params);
         };
-        // Top + bottom so the action is visible even if the bottom row is clipped.
         this.controller.setSidebarButtons([
-            {
-                label: continueLabel,
-                tooltip: this.strings.get("STT:MPScoreButtonContinue"),
-                onClick: goBack,
-            },
             {
                 label: continueLabel,
                 tooltip: this.strings.get("STT:MPScoreButtonContinue"),
