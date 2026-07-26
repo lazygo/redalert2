@@ -100,24 +100,24 @@ export class BaseBuildingMission extends Mission {
         }
     }
 
-    private handleBuildingReady(context: MissionContext, objectReady: TechnoRules) {
-        const { game, player } = context;
-        const { actions: actionsApi } = player;
-        const playerData = game.getPlayerData(player.name);
-        let location: { rx: number; ry: number } | undefined = this.getBestLocationForStructure(
-            game,
-            playerData,
-            objectReady,
-        );
-        if (location !== undefined) {
-            this.logger(
-                `Completed (${queueTypeToName(this.queueType)}): ${objectReady.name}, placing at ${location.rx},${
-                    location.ry
-                }`,
-            );
-            actionsApi.placeBuilding(objectReady.name, location.rx, location.ry);
-        } else {
-            this.logger(`Completed (${queueTypeToName(this.queueType)}): ${objectReady.name} but nowhere to place it`);
-        }
-    }
+//     private handleBuildingReady(context: MissionContext, objectReady: TechnoRules) {
+//         const { game, player } = context;
+//         const { actions: actionsApi } = player;
+//         const playerData = game.getPlayerData(player.name);
+//         let location: { rx: number; ry: number } | undefined = this.getBestLocationForStructure(
+//             game,
+//             playerData,
+//             objectReady,
+//         );
+//         if (location !== undefined) {
+//             this.logger(
+//                 `Completed (${queueTypeToName(this.queueType)}): ${objectReady.name}, placing at ${location.rx},${
+//                     location.ry
+//                 }`,
+//             );
+//             actionsApi.placeBuilding(objectReady.name, location.rx, location.ry);
+//         } else {
+//             this.logger(`Completed (${queueTypeToName(this.queueType)}): ${objectReady.name} but nowhere to place it`);
+//         }
+//     }
 }

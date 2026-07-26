@@ -1,20 +1,16 @@
 import { BoxedVar } from './util/BoxedVar';
-import { EventDispatcher } from './util/event';
 import { Routing } from './util/Routing';
 import { Config } from './Config';
 import { IniFile } from './data/IniFile';
-import { IniSection } from './data/IniSection';
 import SplashScreenComponent from './gui/component/SplashScreen';
 import type { ComponentProps } from 'react';
-import { CsfFile, CsfLanguage, csfLocaleMap } from './data/CsfFile';
+import { CsfFile } from './data/CsfFile';
 import { Strings } from './data/Strings';
 import { VirtualFile } from './data/vfs/VirtualFile';
 import { DataStream } from './data/DataStream';
 import { version as appVersion } from './version';
-import { MixFile } from './data/MixFile';
 import { GameRes } from './engine/gameRes/GameRes';
 import { GameResConfig } from './engine/gameRes/GameResConfig';
-import { GameResSource } from './engine/gameRes/GameResSource';
 import { LocalPrefs, StorageKey } from './LocalPrefs';
 import type { Viewport, ViewportRect } from './gui/Viewport';
 import { Gui } from './Gui';
@@ -63,8 +59,8 @@ class MockConsoleVars extends ConsoleVars {
     }
 }
 class MockDevToolsApi {
-    static registerCommand(name: string, cmd: Function) { console.log(`MockDevToolsApi: registerCommand ${name}`); }
-    static registerVar(name: string, bv: BoxedVar<any>) { console.log(`MockDevToolsApi: registerVar ${name}`); }
+    static registerCommand(name: string, _cmd: Function) { console.log(`MockDevToolsApi: registerCommand ${name}`); }
+    static registerVar(name: string, _bv: BoxedVar<any>) { console.log(`MockDevToolsApi: registerVar ${name}`); }
     static listCommands(): string[] { return []; }
     static listVars(): string[] { return []; }
 }
@@ -85,6 +81,7 @@ class ViewportAdapter implements Viewport {
 export class Application {
     private static readonly MOBILE_BASE_VIEWPORT = { width: 800, height: 600 };
     private static readonly MIN_DESKTOP_VIEWPORT = { width: 800, height: 600 };
+    gpuTier: any;
     private async importOptionalDevModule<T = any>(path: string): Promise<T> {
         const importer = optionalDevModuleImporters[path];
         if (!importer) {
@@ -92,16 +89,16 @@ export class Application {
         }
         return importer();
     }
-    private formatString(template: string, ...args: any[]): string {
-        if (!args || args.length === 0)
-            return template;
-        let result = template;
-        for (let i = 0; i < args.length; i++) {
-            const placeholder = new RegExp(`%s|%d`, 'i');
-            result = result.replace(placeholder, String(args[i]));
-        }
-        return result;
-    }
+    // private formatString(template: string, ...args: any[]): string {
+    //     if (!args || args.length === 0)
+    //         return template;
+    //     let result = template;
+    //     for (let i = 0; i < args.length; i++) {
+    //         const placeholder = new RegExp(`%s|%d`, 'i');
+    //         result = result.replace(placeholder, String(args[i]));
+    //     }
+    //     return result;
+    // }
     public viewport: BoxedVar<ViewportRect>;
     private viewportAdapter: ViewportAdapter;
     public config!: Config;
@@ -117,7 +114,7 @@ export class Application {
     private fsAccessLib: any;
     private gameResConfig: GameResConfig | undefined;
     private cdnResourceLoader: any;
-    private gpuTier: any;
+    // private gpuTier: any;
     private splashScreenUpdateCallback?: SplashScreenUpdateCallback;
     private gui?: Gui;
     private preferredViewportSize?: {

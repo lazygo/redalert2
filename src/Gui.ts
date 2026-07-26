@@ -13,11 +13,8 @@ import { StorageScreen } from './gui/screen/options/StorageScreen.js';
 import { Config } from './Config.js';
 import { Strings } from './data/Strings.js';
 import { Engine } from './engine/Engine.js';
-import { MusicType } from './engine/sound/Music.js';
 import { MessageBoxApi } from './gui/component/MessageBoxApi.js';
 import { ToastApi } from './gui/component/ToastApi';
-import { ShpFile } from './data/ShpFile.js';
-import { Palette } from './data/Palette.js';
 import { UiAnimationLoop } from './engine/UiAnimationLoop.js';
 import { Mixer } from './engine/sound/Mixer.js';
 import { ChannelType } from './engine/sound/ChannelType.js';
@@ -72,10 +69,6 @@ export class Gui {
     private generalOptions?: GeneralOptions;
     private fullScreen?: FullScreen;
     private keyBinds?: any;
-    private images: Map<string, ShpFile> = new Map();
-    private palettes: Map<string, Palette> = new Map();
-    private animationId?: number;
-    private lastTime: number = 0;
     constructor(appVersion: string, strings: Strings, config: Config, viewport: BoxedVar<ViewportRect>, rootEl: HTMLElement, cdnResourceLoader?: any, gameResConfig?: GameResConfig, runtimeVars?: any, generalOptions?: GeneralOptions, fullScreen?: FullScreen) {
         this.appVersion = appVersion;
         this.strings = strings;

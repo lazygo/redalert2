@@ -53,8 +53,8 @@ html.ra2-immersive #ra2web-root {
 #ra2web-root {
     position: relative;
     touch-action: none;
-    user-select: none;
     -webkit-user-select: none;
+    user-select: none;
 }
 
 #ra2web-root, #ra2web-root input, #ra2web-root select, #ra2web-root .select, #ra2web-root button {
@@ -178,8 +178,8 @@ html.ra2-immersive #ra2web-root {
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
     -webkit-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
 }
 
 #ra2web-root .message-box-content {
@@ -293,8 +293,8 @@ html.ra2-immersive #ra2web-root {
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
     -webkit-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
 }
 
 #ra2web-root .login-wrapper .title {
@@ -529,6 +529,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 input[type="range"]::-moz-range-thumb {
     -webkit-appearance: none;
+    appearance: none;
     border-radius: 0;
     border: none;
     height: 22px;
@@ -611,8 +612,8 @@ input[type="range"]:focus {
 
 #ra2web-root .select {
     position: relative;
-    user-select: none;
     -webkit-user-select: none;
+    user-select: none;
 }
 
 #ra2web-root .select .select-value {
@@ -892,8 +893,8 @@ input[type="range"]:focus {
 
 #ra2web-root .list-header,
 #ra2web-root .list .list-item {
-    user-select: none;
     -webkit-user-select: none;
+    user-select: none;
     cursor: default;
     padding: 3px;
 }
@@ -2967,8 +2968,8 @@ input[type="range"]:focus {
     z-index: 1000;
     pointer-events: none;
     touch-action: none;
-    user-select: none;
     -webkit-user-select: none;
+    user-select: none;
 }
 
 /* Inset from the corner: nudge right + up so it is not flush against the edge. */
@@ -3011,10 +3012,10 @@ input[type="range"]:focus {
     justify-content: center;
     cursor: pointer;
     touch-action: none;
-    user-select: none;
     -webkit-user-select: none;
-    appearance: none;
+    user-select: none;
     -webkit-appearance: none;
+    appearance: none;
     flex-shrink: 0;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
 }

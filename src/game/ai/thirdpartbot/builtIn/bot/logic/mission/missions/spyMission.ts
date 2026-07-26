@@ -44,7 +44,7 @@ enum SpyMissionState {
 }
 
 const LOST_SPY = "lost_spy";
-const NO_PATH = "no_path";
+// const NO_PATH = "no_path";
 const SUCCESS = "success";
 
 /**

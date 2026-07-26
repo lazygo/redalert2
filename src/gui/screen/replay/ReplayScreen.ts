@@ -29,7 +29,6 @@ import { isIpad } from '@/util/userAgent';
 import { RootScreen } from '@/gui/screen/RootScreen';
 import { LoadingScreenApiFactory, LoadingScreenType } from '@/gui/screen/game/loadingScreen/LoadingScreenApiFactory';
 import { MapFile } from '@/data/MapFile';
-import { ResourceLoader } from '@/engine/ResourceLoader';
 import { MapDigest } from '@/engine/MapDigest';
 import { ChatHistory } from '@/gui/chat/ChatHistory';
 interface Replay {

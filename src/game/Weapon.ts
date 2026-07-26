@@ -126,9 +126,9 @@ interface ProjectileRules {
     inviso?: boolean;
     iniRot: number;
 }
-interface WarheadRules {
-    parasite?: boolean;
-}
+// interface WarheadRules {
+//     parasite?: boolean;
+// }
 interface RulesEngine {
     getWeapon(name: string): WeaponRules;
     getWarhead(name: string): any;
