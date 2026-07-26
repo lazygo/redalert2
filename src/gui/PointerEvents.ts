@@ -1,7 +1,7 @@
 import { CompositeDisposable } from '../util/disposable/CompositeDisposable';
 import { equals } from '../util/array';
 import { clamp } from '../util/math';
-import { getMobileTouchButton } from './MobileTouchControls';
+import { getMobileTouchButton, getMobileTouchCtrl } from './MobileTouchControls';
 import * as THREE from 'three';
 interface PointerPosition {
     x: number;
@@ -36,7 +36,7 @@ interface Scene {
 }
 interface TouchStartBuffer {
     cb: () => void;
-    timeoutId: number;
+    timeoutId: ReturnType<typeof setTimeout>;
 }
 interface FakeMouseEvent extends Partial<MouseEvent> {
     offsetX: number;
@@ -94,6 +94,8 @@ export class PointerEvents {
     private touchStartBuffer?: TouchStartBuffer;
     /** Primary canvas touch id for single-finger / pan tracking (ignores UI holds like R). */
     private activeCanvasTouchId?: number;
+    /** Button locked at canvas touchstart so mouseup matches even if R-hold changes mid-gesture. */
+    private activeTouchButton?: number;
     constructor(renderer: Renderer, lockModePointer: LockModePointer, document: Document, canvasMetrics: CanvasMetrics) {
         this.renderer = renderer;
         this.lockModePointer = lockModePointer;
@@ -113,6 +115,7 @@ export class PointerEvents {
         canvas.addEventListener('touchmove', this.onTouchMove, false);
         canvas.addEventListener('touchstart', this.onTouchStart, false);
         canvas.addEventListener('touchend', this.onTouchEnd, false);
+        canvas.addEventListener('touchcancel', this.onTouchCancel, false);
         canvas.addEventListener('wheel', this.onMouseWheel, { passive: true });
         this.disposables.add(() => {
             canvas.removeEventListener('dblclick', this.onDblClick, false);
@@ -122,6 +125,7 @@ export class PointerEvents {
             canvas.removeEventListener('touchmove', this.onTouchMove, false);
             canvas.removeEventListener('touchstart', this.onTouchStart, false);
             canvas.removeEventListener('touchend', this.onTouchEnd, false);
+            canvas.removeEventListener('touchcancel', this.onTouchCancel, false);
             canvas.removeEventListener('wheel', this.onMouseWheel, false);
         });
     }
@@ -224,6 +228,7 @@ export class PointerEvents {
                 this.touchFingers = 2;
                 const primary = canvasTouches[0];
                 this.activeCanvasTouchId = primary.identifier;
+                this.activeTouchButton = 2;
                 this.initialTouchEvent = event;
                 const fakeEvent = this.fakeMouseEventFromTouch(primary, event, 2);
                 this.onMouseEvent('mousedown', fakeEvent as unknown as MouseEvent);
@@ -235,9 +240,15 @@ export class PointerEvents {
         if (canvasTouches.length === 1 && this.touchFingers <= 0) {
             const primary = canvasTouches[0];
             this.activeCanvasTouchId = primary.identifier;
+            // Lock button at gesture start (R-hold may change before touchend).
+            this.activeTouchButton = getMobileTouchButton();
+            const lockedButton = this.activeTouchButton;
+            // Establish object hover (e.g. minimap mouseover) before the delayed mousedown.
+            const fakeMove = this.fakeMouseEventFromTouch(primary, event, lockedButton);
+            this.onMouseMove(fakeMove as unknown as MouseEvent);
             const callback = () => {
                 this.touchFingers = 1;
-                const fakeEvent = this.fakeMouseEventFromTouch(primary, event);
+                const fakeEvent = this.fakeMouseEventFromTouch(primary, event, lockedButton);
                 this.onMouseEvent('mousedown', fakeEvent as unknown as MouseEvent);
             };
             const timeoutId = setTimeout(callback, 50);
@@ -246,6 +257,12 @@ export class PointerEvents {
         }
     };
     private onTouchEnd = (event: TouchEvent): void => {
+        this.finishCanvasTouch(event);
+    };
+    private onTouchCancel = (event: TouchEvent): void => {
+        this.finishCanvasTouch(event);
+    };
+    private finishCanvasTouch(event: TouchEvent): void {
         event.preventDefault();
         if (this.activeCanvasTouchId === undefined) {
             return;
@@ -254,6 +271,33 @@ export class PointerEvents {
             (touch) => touch.identifier === this.activeCanvasTouchId
         );
         if (!endTouch) {
+            // Finger cancelled/ended without matching id — still unlock if no touches remain.
+            if (event.touches.length === 0) {
+                if (this.touchStartBuffer) {
+                    clearTimeout(this.touchStartBuffer.timeoutId);
+                    this.touchStartBuffer = undefined;
+                }
+                if (this.touchFingers > 0 && this.activeTouchButton !== undefined) {
+                    const button = this.activeTouchButton;
+                    const fakeEvent: FakeMouseEvent = {
+                        offsetX: 0,
+                        offsetY: 0,
+                        button,
+                        isTouch: true,
+                        detail: 1,
+                        altKey: event.altKey,
+                        ctrlKey: event.ctrlKey || getMobileTouchCtrl(),
+                        metaKey: event.metaKey,
+                        shiftKey: event.shiftKey,
+                        timeStamp: event.timeStamp,
+                    };
+                    this.resetCanvasTouchState();
+                    this.onMouseEvent('mouseup', fakeEvent as unknown as MouseEvent);
+                    this.clearObjectHoverAfterTouch(fakeEvent as unknown as MouseEvent);
+                    return;
+                }
+                this.resetCanvasTouchState();
+            }
             return;
         }
         if (this.touchStartBuffer) {
@@ -261,17 +305,45 @@ export class PointerEvents {
             this.touchStartBuffer.cb();
             this.touchStartBuffer = undefined;
         }
-        // Use current mobile R-hold state for single-finger; two-canvas-finger still pans as RMB.
-        const button = this.touchFingers === 2 ? 2 : -1;
+        // Prefer button locked at touchstart so mouseup matches mousePressed.
+        const button = this.activeTouchButton !== undefined
+            ? this.activeTouchButton
+            : (this.touchFingers === 2 ? 2 : getMobileTouchButton());
         const fakeEvent = this.fakeMouseEventFromTouch(endTouch, event, button);
         fakeEvent.touchDuration = this.initialTouchEvent
             ? event.timeStamp - this.initialTouchEvent.timeStamp
             : undefined;
+        this.resetCanvasTouchState();
+        this.onMouseEvent('mouseup', fakeEvent as unknown as MouseEvent);
+        // Touch has no pointer-leave after lift; without this, minimap mouseover sticks
+        // and the next world LMB is hijacked as minimap-drag.
+        this.clearObjectHoverAfterTouch(fakeEvent as unknown as MouseEvent);
+    }
+    private resetCanvasTouchState(): void {
         this.touchFingers = 0;
         this.activeCanvasTouchId = undefined;
+        this.activeTouchButton = undefined;
         this.initialTouchEvent = undefined;
-        this.onMouseEvent('mouseup', fakeEvent as unknown as MouseEvent);
-    };
+        if (this.touchStartBuffer) {
+            clearTimeout(this.touchStartBuffer.timeoutId);
+            this.touchStartBuffer = undefined;
+        }
+    }
+    /** Force mouseout/leave after touch end — browsers don't move off the hit object on lift. */
+    private clearObjectHoverAfterTouch(event: MouseEvent): void {
+        const pointerPos = this.getPointerPosition(event);
+        const previousHoverPath = this.currentHoverPath ? [...this.currentHoverPath] : undefined;
+        const previousTarget = previousHoverPath?.[0];
+        this.currentHoverPath = undefined;
+        if (previousHoverPath) {
+            for (const obj of previousHoverPath) {
+                this.notify('mouseleave', obj, pointerPos, event, undefined, false);
+            }
+        }
+        if (previousTarget) {
+            this.notify('mouseout', previousTarget, pointerPos, event);
+        }
+    }
     private getCanvasTouches(touchList: TouchList, canvas: HTMLCanvasElement): Touch[] {
         return [...touchList].filter((touch) => this.isCanvasTouchTarget(touch.target, canvas));
     }
@@ -331,7 +403,7 @@ export class PointerEvents {
             isTouch: true,
             detail: 1,
             altKey: event.altKey,
-            ctrlKey: event.ctrlKey,
+            ctrlKey: event.ctrlKey || getMobileTouchCtrl(),
             metaKey: event.metaKey,
             shiftKey: event.shiftKey,
             timeStamp: event.timeStamp,
@@ -485,6 +557,13 @@ export class PointerEvents {
                 this.notify(eventType, (target as THREE.Object3D).parent!, pointerPos, originalEvent, intersection);
             }
         });
+    }
+    /** True when the live raycast hover still includes the minimap mesh. */
+    isHoveringObject(obj: THREE.Object3D | undefined | null): boolean {
+        if (!obj || !this.currentHoverPath?.length) {
+            return false;
+        }
+        return this.currentHoverPath.includes(obj);
     }
     dispose(): void {
         if (this.touchStartBuffer) {

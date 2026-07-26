@@ -467,9 +467,14 @@ export class Minimap extends UiObject {
             else {
                 this.mesh.material.dispose();
             }
+            this.mesh = undefined;
         }
         this.texture?.dispose();
         this.destroyViewportOutline();
+    }
+    /** Mesh used for pointer hit-testing (radar panel). */
+    getPointerMesh(): THREE.Mesh | undefined {
+        return this.mesh;
     }
     destroyViewportOutline(): void {
         if (this.viewportOutline) {

@@ -86,7 +86,7 @@
     "gui:creditsvolume": "制作人员音量",
     "gui:requestaudiopermission": "游戏需要您的许可来播放音频。\n\n为了防止将来显示此消息，请从浏览器设置中允许音频始终在此网站上播放。",
     "gui:fullscreen": "全屏（%s）",
-    "stt:fullscreen": "切换全屏模式",
+    "stt:fullscreen": "切换全屏模式（苹果手机为沉浸布局，系统级全屏需「添加到主屏幕」）",
     "ts:hotkeyfswarning": "某些快捷键只能在全屏模式中捕捉",
     "cmnd:togglefps": "切换 FPS",
     "cmnd:togglefpsdesc": "切换显示性能统计信息，如帧率、内存使用情况和延迟",

@@ -95,7 +95,7 @@
     "gui:creditsvolume": "Credits Volume",
     "gui:requestaudiopermission": "The game requires your permission to play audio.\n\nTo prevent this message from being shown in the future, please allow audio to always play on this website from your browser settings.",
     "gui:fullscreen": "Fullscreen (%s)",
-    "stt:fullscreen": "Toggle full screen mode",
+    "stt:fullscreen": "Toggle full screen (on iPhone: immersive layout; add to Home Screen for true fullscreen)",
     "ts:hotkeyfswarning": "Some hotkeys may only be captured in full-screen",
     "cmnd:togglefps": "Toggle FPS",
     "cmnd:togglefpsdesc": "Toggles display of performance statistics, such as frame rate, memory usage and latency",
