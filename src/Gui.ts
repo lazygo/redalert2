@@ -22,6 +22,7 @@ import { UiAnimationLoop } from './engine/UiAnimationLoop.js';
 import { Mixer } from './engine/sound/Mixer.js';
 import { ChannelType } from './engine/sound/ChannelType.js';
 import { AudioSystem } from './engine/sound/AudioSystem.js';
+import { isMobileDevice } from './util/userAgent.js';
 import { Sound } from './engine/sound/Sound.js';
 import { SoundSpecs } from './engine/sound/SoundSpecs.js';
 import { Music } from './engine/sound/Music.js';
@@ -330,7 +331,11 @@ export class Gui {
                 console.log('[Gui] Cleared ShpBuilder caches');
             }
             const TexUtils = await import('./engine/gfx/TextureUtils.js');
-            if (TexUtils?.TextureUtils?.cache) {
+            if (TexUtils?.TextureUtils?.clearCaches) {
+                TexUtils.TextureUtils.clearCaches();
+                console.log('[Gui] Cleared TextureUtils caches');
+            }
+            else if (TexUtils?.TextureUtils?.cache) {
                 TexUtils.TextureUtils.cache.forEach((tex: any) => tex.dispose?.());
                 TexUtils.TextureUtils.cache.clear();
                 console.log('[Gui] Cleared TextureUtils caches');
@@ -405,7 +410,7 @@ export class Gui {
                 mixer = this.createDefaultMixer();
             }
             this.mixer = mixer;
-            this.audioSystem = new AudioSystem(mixer as any);
+            this.audioSystem = new AudioSystem(mixer as any, isMobileDevice() ? 32 : 100);
             const debugRoot = ((window as any).__ra2debug ??= {});
             debugRoot.audioSystem = this.audioSystem;
             debugRoot.mixer = this.mixer;

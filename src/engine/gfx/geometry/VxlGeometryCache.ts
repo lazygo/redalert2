@@ -19,10 +19,14 @@ export class VxlGeometryCache {
     private cacheDir: VirtualFileSystem | null;
     private activeMod: string | null;
     private geometries: Map<VxlFile, THREE.BufferGeometry>;
+    private modelQuality = 1; // ModelQuality.High
     constructor(cacheDir: VirtualFileSystem | null, activeMod: string | null) {
         this.cacheDir = cacheDir;
         this.activeMod = activeMod;
         this.geometries = new Map();
+    }
+    setModelQuality(modelQuality: number): void {
+        this.modelQuality = modelQuality;
     }
     async loadFromStorage(vxlFile: VxlFile, filename: string): Promise<THREE.BufferGeometry | undefined> {
         let geometry = this.geometries.get(vxlFile);
@@ -69,7 +73,7 @@ export class VxlGeometryCache {
     }
     getCacheFileName(filename: string, vxlName: string): string {
         const modPrefix = this.getModPrefix();
-        return VxlGeometryCache.cacheFilePrefix + modPrefix + filename.replace('.vxl', '') + '_' + vxlName;
+        return VxlGeometryCache.cacheFilePrefix + modPrefix + filename.replace('.vxl', '') + '_' + vxlName + '_q' + this.modelQuality;
     }
     getModPrefix(): string {
         return this.activeMod ? this.activeMod + '#' : '#';

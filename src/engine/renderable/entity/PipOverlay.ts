@@ -229,6 +229,14 @@ export class PipOverlay {
         PipOverlay.primaryFactoryTextures.clear();
         PipOverlay.primaryFactoryMaterials.forEach(material => material.dispose());
         PipOverlay.primaryFactoryMaterials.clear();
+        PipOverlay.geometries.forEach((geometry) => geometry.dispose());
+        PipOverlay.geometries.clear();
+        PipOverlay.buildingHealthGeoCache.forEach((geometry) => geometry.dispose());
+        PipOverlay.buildingHealthGeoCache.clear();
+        PipOverlay.unitHealthGeoCache.forEach((geometry) => geometry.dispose());
+        PipOverlay.unitHealthGeoCache.clear();
+        PipOverlay.material?.dispose();
+        PipOverlay.material = undefined;
     }
     constructor(paradropRules: any, audioVisualRules: any, gameObject: GameObject, viewer: {
         value?: any;

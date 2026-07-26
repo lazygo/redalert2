@@ -293,17 +293,29 @@ export class Application {
                 console.warn('[Application] Failed to read general options from local storage', error);
             }
         }
-        // Mobile browsers routinely OOM with High models + large shadow maps.
+        // Mobile: High (Monotone mesh) uses fewer triangles than Low (Culled) → less VRAM.
+        // Shadows still default Off; Low models were a no-op / worse for memory before wiring.
         if (!this.hasLoadedGeneralOptionsFromStorage && isMobileDevice()) {
-            this.generalOptions.graphics.models.value = ModelQuality.Low;
+            this.generalOptions.graphics.models.value = ModelQuality.High;
             this.generalOptions.graphics.shadows.value = ShadowQuality.Off;
-            console.log('[Application] Applied mobile-safe graphics defaults (low models, shadows off)');
+            console.log('[Application] Applied mobile-safe graphics defaults (high/monotone models, shadows off)');
         }
         else if (this.hasLoadedGeneralOptionsFromStorage && isMobileDevice()) {
             // Soft-cap previously saved High shadows so old prefs don't kill the tab.
             if (this.generalOptions.graphics.shadows.value > ShadowQuality.Low) {
                 this.generalOptions.graphics.shadows.value = ShadowQuality.Low;
                 console.log('[Application] Capped mobile shadow quality to Low');
+            }
+            // Prefer Monotone on mobile even if an older build saved ModelQuality.Low.
+            if (this.generalOptions.graphics.models.value === ModelQuality.Low) {
+                this.generalOptions.graphics.models.value = ModelQuality.High;
+                console.log('[Application] Capped mobile model quality to High (Monotone, fewer tris)');
+            }
+            // Soft-cap oversized saved resolutions (framebuffer RAM).
+            const res = this.generalOptions.graphics.resolution.value;
+            if (res && (res.width > Application.MOBILE_BASE_VIEWPORT.width || res.height > Application.MOBILE_BASE_VIEWPORT.height)) {
+                this.generalOptions.graphics.resolution.value = { ...Application.MOBILE_BASE_VIEWPORT };
+                console.log('[Application] Capped mobile resolution to', Application.MOBILE_BASE_VIEWPORT);
             }
         }
     }

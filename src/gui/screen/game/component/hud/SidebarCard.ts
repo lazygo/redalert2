@@ -47,6 +47,10 @@ export class SidebarCard extends UiComponent<SidebarCardProps> {
     static readonly MAX_QUANTITY = 99;
     static readonly labelImageCache = new Map<string, any[]>();
     static readonly quantityImageCache = new Map<string, any[]>();
+    static clearCaches(): void {
+        SidebarCard.labelImageCache.clear();
+        SidebarCard.quantityImageCache.clear();
+    }
     private slotContainers: any[] = [];
     private slotObjects: any[] = [];
     private progressOverlays: any[] = [];

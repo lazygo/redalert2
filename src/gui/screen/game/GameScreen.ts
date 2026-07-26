@@ -122,6 +122,7 @@ export class GameScreen extends RootScreen {
     async onEnter(params: any): Promise<void> {
         this.gameEndHandled = false;
         this.leaveCleanupDone = false;
+        this.vxlGeometryPool?.setModelQuality?.(this.generalOptions?.graphics?.models?.value);
         this.pointer.lock();
         this.pointer.setVisible(false);
         await this.music?.play(MusicType.Loading);
@@ -406,6 +407,12 @@ export class GameScreen extends RootScreen {
         }
         catch (error) {
             console.warn('[GameScreen.onLeave] failed to clear VXL geometry pool', error);
+        }
+        try {
+            this.sound?.clearAudioBufferCache?.();
+        }
+        catch (error) {
+            console.warn('[GameScreen.onLeave] failed to clear audio buffer cache', error);
         }
         this.activeWorldScene = undefined;
         if (hadGameAnimationLoop) {

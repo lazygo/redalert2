@@ -32,6 +32,7 @@ interface SoundSpec {
 interface AudioSystem {
     initialize(): void;
     dispose(): void;
+    clearBufferCache?(): void;
     playWavFile(file: any, channel: ChannelType, volume?: number, pan?: number, delay?: number, rate?: number, loop?: boolean): any;
     playWavSequence(files: any[], channel: ChannelType, volume?: number, pan?: number, delay?: number, rate?: number): any;
     playWavLoop(files: any[], channel: ChannelType, volume?: number, pan?: number, delayMs?: {
@@ -82,6 +83,10 @@ export class Sound {
     dispose(): void {
         this.audioSystem.dispose();
         this.document.removeEventListener("click", this.handleClick);
+    }
+    /** Drop decoded PCM retained after a match; next play re-decodes on demand. */
+    clearAudioBufferCache(): void {
+        this.audioSystem.clearBufferCache?.();
     }
     private getSoundKey(key: SoundKey | string): string | undefined {
         let soundKey: string | undefined;

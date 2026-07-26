@@ -27,11 +27,13 @@ export class AudioSystem {
     private audioContext?: AudioContext;
     private channels = new Map<ChannelType, GainNode>();
     private audioBufferCache = new Map<AudioFile, AudioBuffer>();
+    private readonly audioBufferCacheLimit: number;
     private disposables = new CompositeDisposable();
     private soundsPlaying = new Set<AudioBufferSourceNode>();
     private musicState?: MusicState;
-    constructor(mixer: Mixer) {
+    constructor(mixer: Mixer, audioBufferCacheLimit = 100) {
         this.mixer = mixer;
+        this.audioBufferCacheLimit = audioBufferCacheLimit;
     }
     private handleVolumeChange = (channel: ChannelType, mixer: Mixer): void => {
         this.getChannel(channel).gain.value = mixer.isMuted(channel)
@@ -85,6 +87,7 @@ export class AudioSystem {
     }
     dispose(): void {
         this.disposables.dispose();
+        this.clearBufferCache();
         if (this.audioContext) {
             const ctx = this.audioContext;
             if (ctx.state !== 'closed') {
@@ -97,6 +100,10 @@ export class AudioSystem {
             this.soundsPlaying.clear();
             this.audioContext = undefined;
         }
+    }
+    /** Drop decoded PCM buffers retained across matches (lazy-rebuild on next play). */
+    clearBufferCache(): void {
+        this.audioBufferCache.clear();
     }
     private createChannels(audioContext: AudioContext, mixer: Mixer): void {
         const channelTypes = Object.keys(ChannelType)
@@ -207,7 +214,7 @@ export class AudioSystem {
         if (!buffer) {
             const arrayBuffer = new Uint8Array(file.getData()).buffer;
             buffer = await audioContext.decodeAudioData(arrayBuffer);
-            if (this.audioBufferCache.size >= 100) {
+            if (this.audioBufferCache.size >= this.audioBufferCacheLimit) {
                 this.audioBufferCache.delete(this.audioBufferCache.keys().next().value);
             }
             this.audioBufferCache.set(file, buffer);
@@ -236,7 +243,7 @@ export class AudioSystem {
             }
             (async () => {
                 const buffer = await audioContext.decodeAudioData(arrayBuffer);
-                if (this.audioBufferCache.size >= 100) {
+                if (this.audioBufferCache.size >= this.audioBufferCacheLimit) {
                     this.audioBufferCache.delete(this.audioBufferCache.keys().next().value);
                 }
                 this.audioBufferCache.set(file, buffer);

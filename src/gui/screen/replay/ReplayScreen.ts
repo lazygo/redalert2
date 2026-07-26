@@ -93,12 +93,14 @@ interface Pointer {
     pointerEvents: any;
 }
 interface Sound {
+    clearAudioBufferCache(): unknown;
     play(key: SoundKey, channel: ChannelType): void;
     audioSystem: any;
 }
 interface KeyBinds {
 }
 interface GeneralOptions {
+    graphics: any;
 }
 interface ActionLogger {
 }
@@ -121,6 +123,8 @@ interface GameLoader {
     clearStaticCaches(): void;
 }
 interface VxlGeometryPool {
+    clear(): unknown;
+    setModelQuality(value: any): unknown;
 }
 interface BuildingImageDataCache {
 }
@@ -228,6 +232,7 @@ export class ReplayScreen extends RootScreen {
         this.replayEndHandled = false;
         this.params = params;
         this.disposables.add(() => (this.params = undefined));
+        this.vxlGeometryPool?.setModelQuality?.(this.generalOptions?.graphics?.models?.value);
         this.pointer.lock();
         this.pointer.setVisible(false);
         await this.music?.play(MusicType.Loading);
@@ -520,6 +525,18 @@ export class ReplayScreen extends RootScreen {
         this.gameTurnMgr?.dispose();
         this.gameTurnMgr = undefined;
         this.disposables.dispose();
+        try {
+            this.vxlGeometryPool?.clear?.();
+        }
+        catch (error) {
+            console.warn('[ReplayScreen.onLeave] failed to clear VXL geometry pool', error);
+        }
+        try {
+            this.sound?.clearAudioBufferCache?.();
+        }
+        catch (error) {
+            console.warn('[ReplayScreen.onLeave] failed to clear audio buffer cache', error);
+        }
     }
     private onReplayEnd(): void {
         if (this.replayEndHandled) {

@@ -15,6 +15,7 @@ import { CanvasSpriteBuilder } from '@/engine/renderable/builder/CanvasSpriteBui
 import { TileSets } from '@/game/theater/TileSets';
 import { GameFactory } from '@/game/GameFactory';
 import { TrailerSmokeFx } from '@/engine/renderable/fx/TrailerSmokeFx';
+import { DamageSmokeFx } from '@/engine/renderable/fx/DamageSmokeFx';
 import { ShpAggregator } from '@/engine/renderable/builder/ShpAggregator';
 import { BuildingShpHelper } from '@/engine/renderable/entity/building/BuildingShpHelper';
 import { BuildingAnimArtProps } from '@/engine/renderable/entity/building/BuildingAnimArtProps';
@@ -24,6 +25,10 @@ import { GameOptRandomGen } from '@/game/gameopts/GameOptRandomGen';
 import { DebugRenderable } from '@/engine/renderable/DebugRenderable';
 import { MixinRules } from '@/game/ini/MixinRules';
 import { isNotNullOrUndefined } from '@/util/typeGuard';
+import { TextureUtils } from '@/engine/gfx/TextureUtils';
+import { Building } from '@/engine/renderable/entity/Building';
+import { BlobShadow } from '@/engine/renderable/entity/unit/BlobShadow';
+import { SidebarCard } from '@/gui/screen/game/component/hud/SidebarCard';
 export class GameLoader {
     constructor(private appVersion: string, private workerHostApi: any, private cdnResourceLoader: any, private appResourceLoader: any, private rules: any, private gameModes: any, private sound: any, private iniLogger: any, private actionLogger: any, private speedCheat: any, private gameResConfig: any, private vxlGeometryPool: any, private buildingImageDataCache: any, private debugBotIndex: any, private devMode: boolean) { }
     async load(gameId: string, timestamp: number, gameOptions: any, mapFile: any, playerName: string, isSinglePlayer: boolean, loadingScreenApi: any, cancellationToken?: any): Promise<any> {
@@ -479,5 +484,11 @@ export class GameLoader {
         DebugRenderable.clearCaches();
         CanvasSpriteBuilder.clearCaches();
         TrailerSmokeFx.clearTextureCache();
+        DamageSmokeFx.clearTextureCache();
+        TextureUtils.clearCaches();
+        Building.clearLampTextures();
+        BlobShadow.clearCaches();
+        SidebarCard.clearCaches();
+        this.buildingImageDataCache?.clear?.();
     }
 }
