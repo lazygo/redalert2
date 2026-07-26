@@ -585,12 +585,18 @@ export class Game {
         this.doSpawnObject(obj, tile);
     }
     unspawnObject(obj: any) {
+        if (!obj?.isSpawned) {
+            return;
+        }
         if (obj.isTechno() && obj.owner) {
             obj.owner.removeOwnedObject(obj);
         }
         this.doUnspawnObject(obj);
     }
     limboObject(obj: any, limboData: any) {
+        if (!obj?.isSpawned) {
+            return;
+        }
         obj.limboData = limboData;
         this.doUnspawnObject(obj);
     }
@@ -637,6 +643,11 @@ export class Game {
         this.events.dispatch(new ObjectSpawnEvent(obj));
     }
     private doUnspawnObject(obj: any) {
+        if (!this.world.hasObjectId(obj.id)) {
+            console.warn(`[Game] doUnspawnObject: ${obj.name}#${obj.id} already removed from world`);
+            this.updatableObjects.delete(obj);
+            return;
+        }
         const tile = obj.tile;
         if (!obj.isProjectile() && !obj.isDebris()) {
             this.map.tileOccupation.unoccupyTileRange(tile, obj);

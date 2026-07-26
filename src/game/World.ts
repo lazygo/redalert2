@@ -25,7 +25,9 @@ export class World {
     }
     removeObject(object: GameObject): void {
         if (!this.allObjects.has(object.id)) {
-            throw new Error("Trying to remove non-existent object");
+            // Double-unspawn can happen when multiple systems expire the same object in one tick.
+            console.warn(`[World] removeObject: object id=${object.id} already removed`);
+            return;
         }
         this.allObjects.delete(object.id);
         this._onObjectRemoved.dispatch(this, object);
