@@ -8,9 +8,14 @@ export interface CommandButtonConfig {
 }
 export const commandButtonConfigs: CommandButtonConfig[] = [
     {
-        type: CommandBarButtonType.BugReport,
-        icon: "reportbug.shp",
-        tooltip: (e) => e.get("ts:reportbug"),
+        type: CommandBarButtonType.CenterBase,
+        icon: "button05.shp",
+        tooltip: (e) => e.get("tip:centerbase") || e.get("txt_center_base") || "Center Base",
+    },
+    {
+        type: CommandBarButtonType.NextUnit,
+        icon: "button11.shp",
+        tooltip: (e) => e.get("tip:nextobject") || e.get("txt_next_object") || "Next Unit",
     },
     {
         type: CommandBarButtonType.Team01,

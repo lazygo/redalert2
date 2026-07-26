@@ -2,6 +2,8 @@ import { ScreenType } from '@/gui/screen/game/gameMenu/ScreenType';
 import { FullScreen } from '@/gui/FullScreen';
 import { getHumanReadableKey } from '@/gui/screen/options/component/getHumanReadableKey';
 import { GameMenuScreen } from '@/gui/screen/game/GameMenuScreen';
+import { ReportBug } from '@/gui/screen/mainMenu/main/ReportBug';
+import React from 'react';
 interface Strings {
     get(key: string, ...args: any[]): string;
 }
@@ -25,15 +27,22 @@ interface GameMenuController {
     hideSidebarButtons(): void;
     pushScreen?(screenType: ScreenType, params?: any): Promise<void>;
 }
+interface MessageBoxApi {
+    show(content: any, okLabel?: string, onOk?: () => void): void;
+}
 export class GameMenuHomeScreen extends GameMenuScreen {
     private strings: Strings;
     private fullScreen: FullScreen;
+    private messageBoxApi?: MessageBoxApi;
+    private discordUrl?: string;
     private params?: GameMenuHomeParams;
     declare controller?: GameMenuController;
-    constructor(strings: Strings, fullScreen: FullScreen) {
+    constructor(strings: Strings, fullScreen: FullScreen, messageBoxApi?: MessageBoxApi, discordUrl?: string) {
         super();
         this.strings = strings;
         this.fullScreen = fullScreen;
+        this.messageBoxApi = messageBoxApi;
+        this.discordUrl = discordUrl;
     }
     onEnter(params: GameMenuHomeParams): void {
         this.params = params;
@@ -54,6 +63,21 @@ export class GameMenuHomeScreen extends GameMenuScreen {
                 tooltip: strings.get("STT:Fullscreen"),
                 disabled: !this.fullScreen.isAvailable(),
                 onClick: () => this.fullScreen.toggle(),
+            },
+            {
+                label: strings.get("ts:reportbug"),
+                onClick: () => {
+                    if (!this.messageBoxApi) {
+                        return;
+                    }
+                    this.messageBoxApi.show(
+                        React.createElement(ReportBug, {
+                            discordUrl: this.discordUrl,
+                            strings: this.strings as any,
+                        }),
+                        strings.get('GUI:OK'),
+                    );
+                },
             },
             {
                 label: strings.get("GUI:AbortMission"),

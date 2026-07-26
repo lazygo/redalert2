@@ -27,6 +27,7 @@ import { ReplayRecorder } from '@/network/gamestate/ReplayRecorder';
 import { SoloPlayTurnManager } from '@/network/gamestate/SoloPlayTurnManager';
 import { LanLockstepTurnManager, getLockstepLookaheadTurns } from '@/network/lan/LanLockstepTurnManager';
 import { LanMatchSession } from '@/network/lan/LanMatchSession';
+import { setMobileTouchControlsVisible } from '@/gui/MobileTouchControls';
 import { CombatantSidebarModel } from '@/gui/screen/game/component/hud/viewmodel/CombatantSidebarModel';
 import { ActionFactoryReg } from '@/game/action/ActionFactoryReg';
 import { MessageList } from '@/gui/screen/game/component/hud/viewmodel/MessageList';
@@ -366,6 +367,7 @@ export class GameScreen extends RootScreen {
             return;
         }
         this.leaveCleanupDone = true;
+        setMobileTouchControlsVisible(false);
         this.navigationGuard.disable();
         this.pointer.unlock();
         const hadGameAnimationLoop = Boolean(this.gameAnimationLoop);
@@ -658,8 +660,11 @@ export class GameScreen extends RootScreen {
         if (!localPlayer.isObserver) {
             commandBarButtonList.fromIni(uiIni.getOrCreateSection(this.isSinglePlayer ? 'AdvancedCommandBar' : 'MultiplayerAdvancedCommandBar'));
         }
-        if (this.config.discordUrl) {
-            commandBarButtonList.buttons.push(CommandBarButtonType.BugReport);
+        if (!localPlayer.isObserver) {
+            commandBarButtonList.buttons.push(
+                CommandBarButtonType.CenterBase,
+                CommandBarButtonType.NextUnit,
+            );
         }
         this.hudFactory = new HudFactory(hudSide, this.viewport.value, sidebarModel, messageList, chatHistory, game.debugText, this.runtimeVars.debugText, localPlayer.isObserver ? undefined : localPlayer, game.getCombatants(), game.stalemateDetectTrait, game.countdownTimer, cameoFilenames, this.jsxRenderer, this.strings, commandBarButtonList.buttons, this.runtimeVars.persistentHoverTags);
         this.disposables.add(() => this.hudFactory = undefined);
@@ -868,6 +873,7 @@ export class GameScreen extends RootScreen {
 
     private onGameStart(localPlayer: any, game: any, uiInitResult: any, actionQueue: any, actionFactory: any, replay: any): void {
         this.localPrefs.removeItem(StorageKey.LastConnection);
+        setMobileTouchControlsVisible(true);
         // Keep Lan loading-screen API alive so mid-match reconnect can reuse the classic fullscreen page.
         if (typeof this.loadingScreenApi?.endLoading === 'function') {
             this.loadingScreenApi.endLoading();

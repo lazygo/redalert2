@@ -7,6 +7,7 @@ import { SoundHandler } from '@/gui/screen/game/SoundHandler';
 import { WorldInteractionFactory } from '@/gui/screen/game/worldInteraction/WorldInteractionFactory';
 import { ObserverUi } from '@/gui/screen/game/ObserverUi';
 import { GameMenu } from '@/gui/screen/game/GameMenu';
+import { setMobileTouchControlsVisible } from '@/gui/MobileTouchControls';
 import { WorldView } from '@/gui/screen/game/WorldView';
 import { Eva } from '@/engine/sound/Eva';
 import { EvaSpecs } from '@/engine/sound/EvaSpecs';
@@ -370,6 +371,7 @@ export class ReplayScreen extends RootScreen {
     }
     private onGameStart(game: Game, minimap: Minimap, messageList: MessageList, worldScene: any, worldSound: any, renderableManager: any): void {
         this.loadingScreenApi?.dispose();
+        setMobileTouchControlsVisible(true);
         this.music?.play(MusicType.Normal);
         const evaSpecs = new EvaSpecs(SideType.GDI).readIni(Engine.getIni("eva.ini"));
         const eva = new Eva(evaSpecs, this.sound as any, this.renderer as any);
@@ -499,6 +501,7 @@ export class ReplayScreen extends RootScreen {
         });
     }
     async onLeave(): Promise<void> {
+        setMobileTouchControlsVisible(false);
         this.pointer.unlock();
         if (this.gameAnimationLoop) {
             this.gameAnimationLoop.destroy();

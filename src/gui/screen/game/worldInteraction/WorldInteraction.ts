@@ -2,6 +2,7 @@ import { rectContainsPoint } from '@/util/geometry';
 import { PointerType } from '@/engine/type/PointerType';
 import { ActionFilter } from './DefaultActionHandler';
 import { isMacFirefox } from '@/util/userAgent';
+import { setMobileJoystickPanHandler } from '@/gui/MobileTouchControls';
 export class WorldInteraction {
     private initialized = false;
     private enabled = true;
@@ -57,8 +58,10 @@ export class WorldInteraction {
         this.minimapHandler.minimap.onMouseMove.subscribe(this.handleMinimapMouseMove);
         this.minimapHandler.minimap.onMouseOut.subscribe(this.handleMinimapMouseOut);
         this.tooltipHandler.init();
+        setMobileJoystickPanHandler(this.handleJoystickPan);
     }
     private teardownHandlers(): void {
+        setMobileJoystickPanHandler(undefined);
         this.pointerEvents.removeEventListener('canvas', 'mousemove', this.handleMouseMove);
         this.pointerEvents.removeEventListener('canvas', 'mousedown', this.handleMouseDown);
         this.pointerEvents.removeEventListener('canvas', 'mouseup', this.handleMouseUp);
@@ -195,6 +198,12 @@ export class WorldInteraction {
         this.arrowScrollHandler.handleKeyUp(event);
         this.chatTypingHandler?.handleKeyUp?.(event);
         this.tooltipHandler.reset();
+    };
+    private readonly handleJoystickPan = (nx: number, ny: number): void => {
+        if (!this.enabled) {
+            return;
+        }
+        this.mapScrollHandler.applyJoystickPan(nx, ny);
     };
     private handleKeyModifierChange(event: KeyboardEvent): void {
         const previous = this.lastKeyMods;

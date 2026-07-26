@@ -60,6 +60,8 @@
     "ts:reportbug": "Report a Bug",
     "ts:reportbugtt": "You can report any bugs you find on our Discord server",
     "ts:reportbugdesc": "You can submit a bug on our dedicated Discord server channel by following the link below:",
+    "tip:nextobject": "Select next unit (N)",
+    "tip:centerbase": "Center on base (H)",
     "ts:patchnotes": "Patch Notes",
     "stt:patchnotes": "Displays the change log for each version of the game client",
     "ts:infoandcredits": "Info & Credits",
