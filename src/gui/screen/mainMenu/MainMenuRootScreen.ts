@@ -277,10 +277,10 @@ export class MainMenuRootScreen extends RootScreen {
             );
         }
         else if (screenType === MainMenuScreenType.Home) {
-            screen = new screenClass(this.strings, this.messageBoxApi, this.appVersion, false, false, this.fullScreen);
+            screen = new screenClass(this.strings, this.messageBoxApi, this.appVersion, false, this.fullScreen);
         }
         else {
-            screen = new screenClass(this.strings, this.messageBoxApi, this.appVersion, false, false);
+            screen = new screenClass(this.strings, this.messageBoxApi, this.appVersion, false);
         }
         return screen;
     }

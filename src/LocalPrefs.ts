@@ -12,8 +12,6 @@ export enum StorageKey {
     LastPlayerColor = "_r_lastColor",
     LastPlayerStartPos = "_r_lastStartPos",
     LastPlayerTeam = "_r_lastTeam",
-    LastQueueRanked = "_r_lastRanked",
-    LastQueueType = "_r_lastQueueType",
     LastBots = "_r_lastBots",
     PreferredGameOpts = "_r_hostOpts",
     LastConnection = "_r_lastCon",

@@ -11,15 +11,13 @@ export class StorageScreen extends MainMenuScreen {
     private messageBoxApi: MessageBoxApi;
     private appVersion: string;
     private storageEnabled: boolean;
-    private quickMatchEnabled: boolean;
     declare title: string;
-    constructor(strings: Strings, messageBoxApi: MessageBoxApi, appVersion: string, storageEnabled: boolean = false, quickMatchEnabled: boolean = false) {
+    constructor(strings: Strings, messageBoxApi: MessageBoxApi, appVersion: string, storageEnabled: boolean = false) {
         super();
         this.strings = strings;
         this.messageBoxApi = messageBoxApi;
         this.appVersion = appVersion;
         this.storageEnabled = storageEnabled;
-        this.quickMatchEnabled = quickMatchEnabled;
         this.title = this.strings.get("GUI:Storage") || "Storage";
     }
     onEnter(params?: any): void {

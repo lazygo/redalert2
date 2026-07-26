@@ -6,7 +6,9 @@ export enum MusicType {
     Score = "SCORE",
     Loading = "LOADING",
     Credits = "CREDITS",
-    Options = "RA2Options"
+    Options = "RA2Options",
+    /** Custom menu BGM from public/music.aac */
+    Menu = "MENU"
 }
 interface MusicSpec {
     name: string;
@@ -20,12 +22,18 @@ interface MusicSpecs {
 }
 interface AudioSystem {
     playMusicFile(file: any, repeat: boolean, onEnded?: () => void): Promise<boolean>;
+    playMusicUrl?(url: string, repeat: boolean, onEnded?: () => void): Promise<boolean>;
+    fadeOutAndStopMusic?(durationMs?: number): Promise<void>;
     stopMusic(): void;
 }
 interface AudioFiles {
     get(filename: string): Promise<any>;
 }
 export class Music {
+    static readonly MENU_MUSIC_URL = (() => {
+        const base = import.meta.env.BASE_URL || "/";
+        return `${base.endsWith("/") ? base : `${base}/`}music.aac`;
+    })();
     private audioSystem: AudioSystem;
     private audioFiles: AudioFiles;
     private musicSpecs: MusicSpecs;
@@ -84,6 +92,10 @@ export class Music {
         console.log(`[Music] Available music specs:`, allSpecs.map(s => ({ name: s.name, sound: s.sound })));
     }
     async play(type: MusicType): Promise<void> {
+        if (type === MusicType.Menu || type === MusicType.Intro) {
+            await this.playMenuTheme();
+            return;
+        }
         if (this.currentMusicType === type)
             return;
         if (type === MusicType.Normal || type === MusicType.NormalShuffle) {
@@ -95,6 +107,10 @@ export class Music {
                 if (index !== -1) {
                     this.currentPlaylistIdx = index;
                 }
+            }
+            if (!this.playlist.length) {
+                console.warn(`[Music] No playlist tracks available for type "${type}"`);
+                return;
             }
             const success = await this.playSpec(this.playlist[this.currentPlaylistIdx], () => this.advancePlaylist());
             if (success) {
@@ -113,6 +129,29 @@ export class Music {
                 console.warn(`No music spec found for type "${type}"`);
             }
         }
+    }
+    async playMenuTheme(): Promise<void> {
+        if (this.currentMusicType === MusicType.Menu)
+            return;
+        const playUrl = this.audioSystem.playMusicUrl;
+        if (!playUrl) {
+            console.warn("[Music] playMusicUrl is not available on audio system");
+            return;
+        }
+        const success = await playUrl.call(this.audioSystem, Music.MENU_MUSIC_URL, true);
+        if (success !== false) {
+            this.currentMusicType = MusicType.Menu;
+        }
+    }
+    async fadeOutAndStop(durationMs: number = 2500): Promise<void> {
+        const fade = this.audioSystem.fadeOutAndStopMusic;
+        if (fade) {
+            await fade.call(this.audioSystem, durationMs);
+        }
+        else {
+            this.audioSystem.stopMusic();
+        }
+        this.currentMusicType = undefined;
     }
     stopPlaying(): void {
         this.audioSystem.stopMusic();

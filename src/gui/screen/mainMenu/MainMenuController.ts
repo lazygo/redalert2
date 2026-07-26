@@ -57,12 +57,12 @@ export class MainMenuController extends Controller {
             this.setSidebarTitle(screen.title);
         }
         if (screen && 'musicType' in screen && screen.musicType !== undefined && this.music) {
-            console.log(`[MainMenuController] Playing music for screen ${screenType}: ${screen.musicType}`);
+            console.log(`[MainMenuController] Playing menu theme for screen ${screenType}`);
             try {
-                await this.music.play(screen.musicType);
+                await this.music.playMenuTheme();
             }
             catch (error) {
-                console.error(`[MainMenuController] Failed to play music for screen ${screenType}:`, error);
+                console.error(`[MainMenuController] Failed to play menu theme for screen ${screenType}:`, error);
             }
         }
     }

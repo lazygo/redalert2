@@ -234,7 +234,7 @@ export class ReplayScreen extends RootScreen {
         this.vxlGeometryPool?.setModelQuality?.(this.generalOptions?.graphics?.models?.value);
         this.pointer.lock();
         this.pointer.setVisible(false);
-        await this.music?.play(MusicType.Loading);
+        // Keep menu BGM through loading; fade out when playback actually starts.
         const { gameId, gameTimestamp, gameOpts, engineVersion, modHash } = params.replay;
         let errorMessage: string | undefined;
         if (engineVersion !== this.engineVersion) {
@@ -376,7 +376,12 @@ export class ReplayScreen extends RootScreen {
     private onGameStart(game: Game, minimap: Minimap, messageList: MessageList, worldScene: any, worldSound: any, renderableManager: any): void {
         this.loadingScreenApi?.dispose();
         setMobileTouchControlsVisible(true);
-        this.music?.play(MusicType.Normal);
+        this.music?.fadeOutAndStop(2500).then(() => {
+            this.music?.play(MusicType.Normal);
+        }).catch((error: unknown) => {
+            console.error('[ReplayScreen] Failed to fade out menu music:', error);
+            this.music?.play(MusicType.Normal);
+        });
         const evaSpecs = new EvaSpecs(SideType.GDI).readIni(Engine.getIni("eva.ini"));
         const eva = new Eva(evaSpecs, this.sound as any, this.renderer as any);
         eva.init();

@@ -11,7 +11,6 @@ import { MainMenuScreen } from '../MainMenuScreen';
 import { Task } from '@puzzl/core/lib/async/Task';
 import { OperationCanceledError } from '@puzzl/core/lib/async/cancellation/OperationCanceledError';
 import { MAX_LIST_SEARCH_COUNT } from '../../../../network/ladder/wladderConfig';
-import { MainMenuRoute } from '../MainMenuRoute';
 import { ChatMessage, ChatRecipientType } from '../../../../network/chat/ChatMessage';
 import { ChatHistory } from '../../../chat/ChatHistory';
 import { WolError } from '../../../../network/WolError';
@@ -270,10 +269,7 @@ export class CustomGameScreen extends MainMenuScreen {
                     tooltip: this.strings.get("STT:ChangeServer"),
                     onClick: () => {
                         this.wolService.closeWolConnection();
-                        this.controller?.goToScreen(ScreenType.Login, {
-                            clearCredentials: true,
-                            afterLogin: (messages: any) => new MainMenuRoute(ScreenType.CustomGame, { messages }),
-                        });
+                        this.controller?.goToScreen(ScreenType.Home);
                     },
                 }] : []),
             {
@@ -339,9 +335,7 @@ export class CustomGameScreen extends MainMenuScreen {
             await this.loadChannel(cancellationToken);
         }
         else {
-            this.controller.goToScreen(ScreenType.Login, {
-                afterLogin: (messages: any) => new MainMenuRoute(ScreenType.CustomGame, { messages }),
-            });
+            this.controller.goToScreen(ScreenType.Home);
         }
     }
     private async loadChannel(cancellationToken: CancellationToken) {
