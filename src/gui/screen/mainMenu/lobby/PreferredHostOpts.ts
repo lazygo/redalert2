@@ -10,7 +10,7 @@ export class PreferredHostOpts {
     cratesAppear: boolean = true;
     hostTeams: boolean = true;
     destroyableBridges: boolean = true;
-    multiEngineer: boolean = false;
+    multiEngineer: boolean = true;
     noDogEngiKills: boolean = false;
     slotsClosed: Set<number> = new Set();
     serialize(): string {
@@ -52,7 +52,13 @@ export class PreferredHostOpts {
     applyMpDialogSettings(mpDialogSettings: any): this {
         this.gameSpeed = mpDialogSettings.gameSpeed !== undefined ? 6 - mpDialogSettings.gameSpeed : this.gameSpeed;
         this.credits = mpDialogSettings.money ?? this.credits;
-        this.unitCount = mpDialogSettings.unitCount ?? this.unitCount;
+        // unitCount / cratesAppear / multiEngineer: keep PreferredHostOpts product defaults (9 / on / on)
+        if (mpDialogSettings.minUnitCount !== undefined && mpDialogSettings.maxUnitCount !== undefined) {
+            this.unitCount = Math.max(
+                mpDialogSettings.minUnitCount,
+                Math.min(mpDialogSettings.maxUnitCount, this.unitCount),
+            );
+        }
         this.shortGame = mpDialogSettings.shortGame ?? this.shortGame;
         this.superWeapons = mpDialogSettings.superWeapons ?? this.superWeapons;
         this.buildOffAlly = mpDialogSettings.buildOffAlly ?? this.buildOffAlly;
