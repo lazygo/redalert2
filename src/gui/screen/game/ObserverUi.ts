@@ -1,4 +1,3 @@
-import React from 'react';
 import { CompositeDisposable } from '@/util/disposable/CompositeDisposable';
 import { EventDispatcher } from '@/util/event';
 import { SoundKey } from '@/engine/sound/SoundKey';
@@ -68,16 +67,6 @@ export class ObserverUi {
     private initHudEventListeners(hud: any): void {
         hud.onSidebarTabClick.subscribe(() => {
             this.sound.play(SoundKey.GUITabSound, ChannelType.Ui);
-        });
-        hud.onCommandBarButtonClick.subscribe((buttonType: any) => {
-            switch (buttonType) {
-                case 'BugReport':
-                    if (this.discordUrl) {
-                        this.gameMenu.open();
-                        this.messageBoxApi.show(React.createElement('div', {}, 'Bug Report'), this.strings.get('GUI:OK'));
-                    }
-                    break;
-            }
         });
     }
     private initKeyboardCommands(worldInteraction: any): void {

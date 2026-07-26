@@ -1,4 +1,3 @@
-import React from 'react';
 import { CompositeDisposable } from '@/util/disposable/CompositeDisposable';
 import { SoundKey } from '@/engine/sound/SoundKey';
 import { ChannelType } from '@/engine/sound/ChannelType';
@@ -29,7 +28,6 @@ import { FollowUnitCmd } from '@/gui/screen/game/worldInteraction/keyboard/comma
 import { PendingPlacementHandler } from '@/gui/screen/game/worldInteraction/PendingPlacementHandler';
 import { CommandBarButtonType } from '@/gui/screen/game/component/hud/commandBar/CommandBarButtonType';
 import { BeaconMode } from '@/gui/screen/game/worldInteraction/BeaconMode';
-import { ReportBug } from '@/gui/screen/mainMenu/main/ReportBug';
 import { CenterBaseCmd } from '@/gui/screen/game/worldInteraction/keyboard/command/CenterBaseCmd';
 import { SelectByTypeCmd } from '@/gui/screen/game/worldInteraction/keyboard/command/SelectTypeByCmd';
 import { PlacementMode } from '@/gui/screen/game/worldInteraction/PlacementMode';
@@ -236,12 +234,11 @@ export class CombatantUi {
         const unitSelectionHandler = worldInteraction.unitSelectionHandler;
         const onCommandBarButtonClick = (buttonType: CommandBarButtonType) => {
             switch (buttonType) {
-                case CommandBarButtonType.BugReport:
-                    if (!this.discordUrl) {
-                        break;
-                    }
-                    this.gameMenu.open();
-                    this.messageBoxApi.show(React.createElement(ReportBug, { discordUrl: this.discordUrl, strings: this.strings }), this.strings.get('GUI:OK'));
+                case CommandBarButtonType.CenterBase:
+                    worldInteraction.keyboardHandler.executeCommand(KeyCommandType.CenterBase);
+                    break;
+                case CommandBarButtonType.NextUnit:
+                    worldInteraction.keyboardHandler.executeCommand(KeyCommandType.NextObject);
                     break;
                 case CommandBarButtonType.Beacon:
                     if (worldInteraction.getMode() !== beaconMode) {

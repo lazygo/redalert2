@@ -92,6 +92,8 @@ export class PointerEvents {
     private currentHoverPath?: THREE.Object3D[];
     private initialTouchEvent?: TouchEvent;
     private touchStartBuffer?: TouchStartBuffer;
+    /** Primary canvas touch id for single-finger / pan tracking (ignores UI holds like R). */
+    private activeCanvasTouchId?: number;
     constructor(renderer: Renderer, lockModePointer: LockModePointer, document: Document, canvasMetrics: CanvasMetrics) {
         this.renderer = renderer;
         this.lockModePointer = lockModePointer;
@@ -186,44 +188,56 @@ export class PointerEvents {
     };
     private onTouchMove = (event: TouchEvent): void => {
         event.preventDefault();
-        if (this.initialTouchEvent?.touches) {
-            const initialTouch = this.initialTouchEvent.touches[0];
-            const currentTouch = [...event.changedTouches].find((touch) => initialTouch.identifier === touch.identifier);
-            if (currentTouch) {
-                if (this.touchStartBuffer) {
-                    clearTimeout(this.touchStartBuffer.timeoutId);
-                    this.touchStartBuffer.cb();
-                    this.touchStartBuffer = undefined;
-                }
-                const fakeEvent = this.fakeMouseEventFromTouch(currentTouch, event);
-                this.onMouseMove(fakeEvent as unknown as MouseEvent);
-            }
+        if (this.activeCanvasTouchId === undefined) {
+            return;
         }
+        const currentTouch = [...event.changedTouches].find(
+            (touch) => touch.identifier === this.activeCanvasTouchId
+        );
+        if (!currentTouch) {
+            return;
+        }
+        if (this.touchStartBuffer) {
+            clearTimeout(this.touchStartBuffer.timeoutId);
+            this.touchStartBuffer.cb();
+            this.touchStartBuffer = undefined;
+        }
+        const fakeEvent = this.fakeMouseEventFromTouch(currentTouch, event);
+        this.onMouseMove(fakeEvent as unknown as MouseEvent);
     };
     private onTouchStart = (event: TouchEvent): void => {
         event.preventDefault();
-        const touches = event.touches;
-        if (touches.length > 1) {
-            if (this.touchFingers <= 0) {
-                if (touches[0].target === this.renderer.getCanvas() && touches.length === 2) {
-                    if (this.touchStartBuffer) {
-                        clearTimeout(this.touchStartBuffer.timeoutId);
-                        this.touchStartBuffer = undefined;
-                    }
-                    this.touchFingers = 2;
-                    if (!this.initialTouchEvent) {
-                        this.initialTouchEvent = event;
-                    }
-                    const initialTouch = this.initialTouchEvent.touches[0];
-                    const fakeEvent = this.fakeMouseEventFromTouch(initialTouch, event, 2);
-                    this.onMouseEvent('mousedown', fakeEvent as unknown as MouseEvent);
-                }
-            }
+        const canvas = this.renderer.getCanvas();
+        const canvasTouches = this.getCanvasTouches(event.touches, canvas);
+        const changedCanvasTouches = this.getCanvasTouches(event.changedTouches, canvas);
+        if (!changedCanvasTouches.length) {
+            // Touch landed on overlay controls (R / joystick / N) — ignore for game input.
+            return;
         }
-        else {
+
+        if (canvasTouches.length >= 2) {
+            if (this.touchFingers <= 0) {
+                if (this.touchStartBuffer) {
+                    clearTimeout(this.touchStartBuffer.timeoutId);
+                    this.touchStartBuffer = undefined;
+                }
+                this.touchFingers = 2;
+                const primary = canvasTouches[0];
+                this.activeCanvasTouchId = primary.identifier;
+                this.initialTouchEvent = event;
+                const fakeEvent = this.fakeMouseEventFromTouch(primary, event, 2);
+                this.onMouseEvent('mousedown', fakeEvent as unknown as MouseEvent);
+            }
+            return;
+        }
+
+        // One finger on canvas — even if another finger holds a UI button elsewhere.
+        if (canvasTouches.length === 1 && this.touchFingers <= 0) {
+            const primary = canvasTouches[0];
+            this.activeCanvasTouchId = primary.identifier;
             const callback = () => {
                 this.touchFingers = 1;
-                const fakeEvent = this.fakeMouseEventFromTouch(touches[0], event);
+                const fakeEvent = this.fakeMouseEventFromTouch(primary, event);
                 this.onMouseEvent('mousedown', fakeEvent as unknown as MouseEvent);
             };
             const timeoutId = setTimeout(callback, 50);
@@ -233,24 +247,40 @@ export class PointerEvents {
     };
     private onTouchEnd = (event: TouchEvent): void => {
         event.preventDefault();
-        if (this.initialTouchEvent?.touches) {
-            const initialTouch = this.initialTouchEvent.touches[0];
-            const endTouch = [...event.changedTouches].find((touch) => initialTouch.identifier === touch.identifier);
-            if (endTouch) {
-                if (this.touchStartBuffer) {
-                    clearTimeout(this.touchStartBuffer.timeoutId);
-                    this.touchStartBuffer.cb();
-                    this.touchStartBuffer = undefined;
-                }
-                const button = this.touchFingers === 2 ? 2 : -1;
-                const fakeEvent = this.fakeMouseEventFromTouch(endTouch, event, button);
-                fakeEvent.touchDuration = event.timeStamp - this.initialTouchEvent.timeStamp;
-                this.touchFingers = 0;
-                this.initialTouchEvent = undefined;
-                this.onMouseEvent('mouseup', fakeEvent as unknown as MouseEvent);
-            }
+        if (this.activeCanvasTouchId === undefined) {
+            return;
         }
+        const endTouch = [...event.changedTouches].find(
+            (touch) => touch.identifier === this.activeCanvasTouchId
+        );
+        if (!endTouch) {
+            return;
+        }
+        if (this.touchStartBuffer) {
+            clearTimeout(this.touchStartBuffer.timeoutId);
+            this.touchStartBuffer.cb();
+            this.touchStartBuffer = undefined;
+        }
+        // Use current mobile R-hold state for single-finger; two-canvas-finger still pans as RMB.
+        const button = this.touchFingers === 2 ? 2 : -1;
+        const fakeEvent = this.fakeMouseEventFromTouch(endTouch, event, button);
+        fakeEvent.touchDuration = this.initialTouchEvent
+            ? event.timeStamp - this.initialTouchEvent.timeStamp
+            : undefined;
+        this.touchFingers = 0;
+        this.activeCanvasTouchId = undefined;
+        this.initialTouchEvent = undefined;
+        this.onMouseEvent('mouseup', fakeEvent as unknown as MouseEvent);
     };
+    private getCanvasTouches(touchList: TouchList, canvas: HTMLCanvasElement): Touch[] {
+        return [...touchList].filter((touch) => this.isCanvasTouchTarget(touch.target, canvas));
+    }
+    private isCanvasTouchTarget(target: EventTarget | null, canvas: HTMLCanvasElement): boolean {
+        if (!target || !(target instanceof Node)) {
+            return false;
+        }
+        return target === canvas || canvas.contains(target);
+    }
     addEventListener(target: THREE.Object3D | 'canvas', eventType: string, callback: (event: PointerEventData) => void, useCapture: boolean = false): () => void {
         const context = target === 'canvas'
             ? this.canvasContext

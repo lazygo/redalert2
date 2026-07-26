@@ -54,6 +54,8 @@
     "ts:reportbug": "报告错误",
     "ts:reportbugtt": "请微信关注公众号报告BUG或者获取解决方案！",
     "ts:reportbugdesc": "请微信关注公众号报告BUG或者获取解决方案！",
+    "tip:nextobject": "选择下一个单位（N）",
+    "tip:centerbase": "回到基地（H）",
     "ts:patchnotes": "补丁说明",
     "stt:patchnotes": "显示游戏客户端每个版本的更改日志",
     "ts:infoandcredits": "信息与制作人员",

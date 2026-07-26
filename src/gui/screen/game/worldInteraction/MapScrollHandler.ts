@@ -61,6 +61,22 @@ export class MapScrollHandler {
     isScrolling(): boolean {
         return !!this.panDirection && (!!this.panDirection.x || !!this.panDirection.y);
     }
+    /** Mobile virtual joystick: nx/ny in [-1, 1] applied as continuous pan. */
+    applyJoystickPan(nx: number, ny: number): void {
+        if (this.paused || (!nx && !ny)) {
+            return;
+        }
+        const rate = (this.scrollRate.value / 5) * 16;
+        const currentPan = this.cameraPan.getPan();
+        const panLimits = this.cameraPan.getPanLimits();
+        const nextPan = {
+            x: clamp(currentPan.x + nx * rate, panLimits.x, panLimits.x + panLimits.width),
+            y: clamp(currentPan.y + ny * rate, panLimits.y, panLimits.y + panLimits.height),
+        };
+        if (!pointEquals(nextPan, currentPan)) {
+            this.cameraPan.setPan(nextPan);
+        }
+    }
     requestForceScroll(direction: THREE.Vector2): void {
         this.forceScrollDirection = direction.clone?.() ?? new THREE.Vector2(direction.x, direction.y);
         this.forceScrollCancelRequested = false;

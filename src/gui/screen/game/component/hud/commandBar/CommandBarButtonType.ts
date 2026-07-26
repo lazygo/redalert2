@@ -1,6 +1,7 @@
 export enum CommandBarButtonType {
     Separator = 0,
-    BugReport = 1,
+    /** Camera to construction yard / MCV (H key / CenterBase). */
+    CenterBase = 1,
     Beacon = 2,
     Cheer = 3,
     Deploy = 4,
@@ -14,5 +15,7 @@ export enum CommandBarButtonType {
     ReplayRewind = 12,
     ReplayPlay = 13,
     ReplayPause = 14,
-    ReplaySpeed = 15
+    ReplaySpeed = 15,
+    /** Cycle to next owned unit (N key / NextObject). */
+    NextUnit = 16,
 }
