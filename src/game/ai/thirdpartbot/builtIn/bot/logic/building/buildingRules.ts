@@ -203,6 +203,8 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
 
     ["E1", new BasicGroundUnit(2, 2, 0.2, 0)], // GI
     ["ENGINEER", new BasicGroundUnit(1, 0, 0)], // Engineer
+    ["SPY", new BasicGroundUnit(0, 0)], // Spy (requested by SpyMission on Savage)
+    ["ADOG", new BasicGroundUnit(1, 1, 0, 0)], // Allied Attack Dog
     ["MTNK", new BasicGroundUnit(10, 3, 2, 0)], // Grizzly Tank
     ["MGTK", new BasicGroundUnit(10, 1, 2.5, 0)], // Mirage Tank
     ["FV", new BasicGroundUnit(5, 2, 0.5, 1)], // IFV

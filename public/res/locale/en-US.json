@@ -143,6 +143,8 @@
     "gui:ainormal:tooltip": "More aggressive attacks and larger squads.",
     "gui:aibrutal": "Brutal",
     "gui:aibrutal:tooltip": "Fast attacks, aggressive expansion, and a strong economy.",
+    "gui:aisavage": "Savage",
+    "gui:aisavage:tooltip": "Harder than Brutal: land/sea/air combined arms, counters your army mix, and uses spies.",
     "gui:aicustom": "AI - Custom",
     "gui:aicustom:tooltip": "Uses uploaded custom AI bot script.",
     "gui:botupload": "Upload AI Bot",

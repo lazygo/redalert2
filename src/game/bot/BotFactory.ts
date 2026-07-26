@@ -7,6 +7,7 @@ import { ThirdPartyBotAdapter } from '../ai/thirdpartbot/ThirdPartyBotAdapter';
 import {
     BRUTAL_BOT_PROFILE,
     NORMAL_BOT_PROFILE,
+    SAVAGE_BOT_PROFILE,
     SIMPLE_BOT_PROFILE,
     type BotDifficultyProfile,
 } from '../ai/thirdpartbot/builtIn/bot/BotDifficultyProfile';
@@ -73,6 +74,8 @@ export class BotFactory {
                 return NORMAL_BOT_PROFILE;
             case AiDifficulty.Brutal:
                 return BRUTAL_BOT_PROFILE;
+            case AiDifficulty.Savage:
+                return SAVAGE_BOT_PROFILE;
             default:
                 return undefined;
         }

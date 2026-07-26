@@ -133,6 +133,7 @@ export class BuiltInBot extends Bot {
             const fullContext: SupabotContext = {
                 ...this.context,
                 matchAwareness: this.matchAwareness,
+                botProfile: this.profile,
             };
 
             // hacky resign condition
