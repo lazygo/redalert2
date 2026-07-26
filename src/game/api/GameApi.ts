@@ -230,6 +230,9 @@ export class GameApi {
                 turretNo: unit.isVehicle() ? unit.turretNo : undefined,
                 garrisonUnitCount: unit.isBuilding() ? unit.garrisonTrait?.units.length : undefined,
                 garrisonUnitsMax: unit.isBuilding() ? unit.garrisonTrait?.maxOccupants : undefined,
+                needsBridgeRepair: unit.isBuilding() && unit.cabHutTrait
+                    ? unit.cabHutTrait.canRepairBridge()
+                    : undefined,
                 passengerSlotCount: unit.isVehicle() ? unit.transportTrait?.getOccupiedCapacity() : undefined,
                 passengerSlotMax: unit.isVehicle() ? unit.transportTrait?.getMaxCapacity() : undefined,
                 isIdle: !unit.unitOrderTrait.hasTasks(),

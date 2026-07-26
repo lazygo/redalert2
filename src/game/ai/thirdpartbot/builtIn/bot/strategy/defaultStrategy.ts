@@ -40,12 +40,12 @@ const DEFAULT_COMPOSITIONS: Compositions = {
     kirovs: {
         composition: { ZEP: 1 },
         minimumUnits: 1,
-        maximumUnits: 3,
+        maximumUnits: 4,
     },
     rocketeers: {
         composition: { JUMPJET: 1 },
         minimumUnits: 2,
-        maximumUnits: 6,
+        maximumUnits: 8,
     },
     heavySovietTanks: {
         composition: { APOC: 2, HTNK: 1 },
@@ -58,9 +58,9 @@ const DEFAULT_COMPOSITIONS: Compositions = {
         maximumUnits: 10,
     },
     sovietArtillery: {
-        composition: { V3: 2, HTNK: 1 },
+        composition: { V3: 3, HTNK: 1 },
         minimumUnits: 3,
-        maximumUnits: 10,
+        maximumUnits: 12,
     },
     alliedArtillery: {
         composition: { SREF: 2, MTNK: 1 },
@@ -91,12 +91,48 @@ const DEFAULT_COMPOSITIONS: Compositions = {
     },
     // Mixed air assault.
     sovietAirAssault: {
-        composition: { ZEP: 1, HTK: 2 },
+        composition: { ZEP: 2, HTK: 2 },
+        minimumUnits: 2,
+        maximumUnits: 8,
+    },
+    alliedAirAssault: {
+        composition: { ORCA: 3, FV: 2 },
+        minimumUnits: 2,
+        maximumUnits: 10,
+    },
+    blackEagles: {
+        composition: { BEAG: 2 },
+        minimumUnits: 2,
+        maximumUnits: 8,
+    },
+    // Specialists (Savage — house/tech gated via getValidCompositions).
+    tanyaRaid: {
+        composition: { TANY: 1, E1: 2 },
+        minimumUnits: 1,
+        maximumUnits: 4,
+    },
+    sniperSquad: {
+        composition: { SNIPE: 2, E1: 2 },
+        minimumUnits: 2,
+        maximumUnits: 8,
+    },
+    sealTeam: {
+        composition: { GHOST: 2, E1: 1 },
         minimumUnits: 2,
         maximumUnits: 6,
     },
-    alliedAirAssault: {
-        composition: { ORCA: 2, FV: 2 },
+    yuriStrike: {
+        composition: { YURI: 2, E2: 2 },
+        minimumUnits: 2,
+        maximumUnits: 6,
+    },
+    ivanSabotage: {
+        composition: { IVAN: 2, DOG: 1 },
+        minimumUnits: 2,
+        maximumUnits: 6,
+    },
+    desolatorPush: {
+        composition: { DESO: 2, HTNK: 1 },
         minimumUnits: 2,
         maximumUnits: 8,
     },
@@ -113,8 +149,23 @@ const ANTI_GROUND_COMPOSITIONS = new Set([
     "sovietArtillery",
     "alliedArtillery",
 ]);
-const AIR_ASSAULT_COMPOSITIONS = new Set(["kirovs", "sovietAirAssault", "alliedAirAssault", "rocketeers"]);
+const AIR_ASSAULT_COMPOSITIONS = new Set([
+    "kirovs",
+    "sovietAirAssault",
+    "alliedAirAssault",
+    "rocketeers",
+    "blackEagles",
+]);
 const NAVY_COMPOSITIONS = new Set(["sovietNavy", "alliedNavy"]);
+const SPECIALIST_COMPOSITIONS = new Set([
+    "tanyaRaid",
+    "sniperSquad",
+    "sealTeam",
+    "yuriStrike",
+    "ivanSabotage",
+    "desolatorPush",
+]);
+const ARTILLERY_COMPOSITIONS = new Set(["sovietArtillery", "alliedArtillery"]);
 
 export class DefaultStrategy implements Strategy {
     private expansionFactory: ExpansionMissionFactory;
@@ -175,6 +226,9 @@ export class DefaultStrategy implements Strategy {
         if (!this.profile.enableNavy) {
             candidates = candidates.filter((id) => !NAVY_COMPOSITIONS.has(id));
         }
+        if (!this.profile.useSpecialists) {
+            candidates = candidates.filter((id) => !SPECIALIST_COMPOSITIONS.has(id));
+        }
 
         if (candidates.length === 0) {
             return null;
@@ -222,6 +276,8 @@ export class DefaultStrategy implements Strategy {
         const scored = candidates.map((id) => {
             let score = 1;
             if (!threat) {
+                if (this.profile.useSpecialists && SPECIALIST_COMPOSITIONS.has(id)) score += 4;
+                if (this.profile.boostAir && AIR_ASSAULT_COMPOSITIONS.has(id)) score += 3;
                 return { id, score };
             }
             const airThreat = threat.totalOffensiveAirThreat;
@@ -235,6 +291,7 @@ export class DefaultStrategy implements Strategy {
             }
             if (groundThreat > airThreat * 1.1) {
                 if (ANTI_GROUND_COMPOSITIONS.has(id)) score += 6;
+                if (ARTILLERY_COMPOSITIONS.has(id)) score += 2;
             }
             // Enemy weak vs air → send air.
             if (enemyAa < ourAa * 0.6 || enemyAa < 40) {
@@ -242,6 +299,16 @@ export class DefaultStrategy implements Strategy {
             }
             if (this.profile.enableNavy && NAVY_COMPOSITIONS.has(id)) {
                 score += 4;
+            }
+            if (this.profile.boostAir) {
+                if (AIR_ASSAULT_COMPOSITIONS.has(id)) score += 4;
+                if (id === "kirovs" || id === "blackEagles" || id === "alliedAirAssault") score += 3;
+                if (ARTILLERY_COMPOSITIONS.has(id)) score += 3;
+            }
+            // Specialists: occasional high-value raids when tech unlocks them.
+            if (this.profile.useSpecialists && SPECIALIST_COMPOSITIONS.has(id)) {
+                score += 5;
+                if (id === "tanyaRaid" || id === "yuriStrike") score += 2;
             }
             return { id, score };
         });

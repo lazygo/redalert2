@@ -28,7 +28,11 @@ interface Viewport {
     y: number;
     width: number;
     height: number;
+    isMobileLayout?: boolean;
 }
+
+/** Extra scale for the bottom command bar on touch layouts (easier tap targets). */
+const MOBILE_COMMAND_BAR_SCALE = 1.4;
 interface SidebarModel {
     repairMode: boolean;
     sellMode: boolean;
@@ -213,11 +217,14 @@ export class Hud extends UiObject {
         this.repeaterHeight = side2Img.height;
         const side3Top = topHeight + radarImg.height + side1Img.height + this.repeaterHeight * this.repeaterCount;
         const lendcapImg = this.getImage("lendcap.shp");
-        this.actionBarHeight = lendcapImg.height;
+        const commandBarScale = this.viewport.isMobileLayout ? MOBILE_COMMAND_BAR_SCALE : 1;
+        this.actionBarHeight = Math.ceil(lendcapImg.height * commandBarScale);
         const actionBarY = this.viewport.y + this.viewport.height - this.actionBarHeight;
         const bttnbkgdImg = this.getImage("bttnbkgd.shp");
         const rendcapImg = this.getImage("rendcap.shp");
-        const availableWidth = sidebarBounds.x - lendcapImg.width - rendcapImg.width;
+        // When scaled up, shrink layout width so the visual bar still fits left of the sidebar.
+        const layoutBarWidth = sidebarBounds.x / commandBarScale;
+        const availableWidth = layoutBarWidth - lendcapImg.width - rendcapImg.width;
         const buttonBackgroundCount = Math.floor(availableWidth / bttnbkgdImg.width);
         const remainderWidth = availableWidth % bttnbkgdImg.width;
         let clippedBttnbkgd: any;
@@ -412,7 +419,17 @@ export class Hud extends UiObject {
             y: side3Top + scrollButtonY,
             ref: (ref: any) => (this.pgUpButton = ref),
             onClick: () => this._onScrollButtonClick.dispatch(this, this.sidebarCard.pageUp()),
-        })), jsx.jsx("container", { x: this.viewport.x, y: actionBarY }, jsx.jsx("container", { x: lendcapImg.width, zIndex: 1 }, this.renderCommandBarButtons(aggregatedImageData, this.commandBarButtonTypes, bttnbkgdImg.width, buttonBackgroundCount)), jsx.jsx("sprite-batch", null, jsx.jsx("sprite", { static: true, image: lendcapImg, palette: sidebarPalette }), new Array(buttonBackgroundCount).fill(0).map((_, index) => jsx.jsx("sprite", {
+        })), jsx.jsx("container", {
+            x: this.viewport.x,
+            y: actionBarY,
+            ref: (ref: any) => {
+                if (commandBarScale !== 1 && ref?.get3DObject) {
+                    const obj = ref.get3DObject();
+                    obj.scale.set(commandBarScale, commandBarScale, 1);
+                    obj.updateMatrix();
+                }
+            },
+        }, jsx.jsx("container", { x: lendcapImg.width, zIndex: 1 }, this.renderCommandBarButtons(aggregatedImageData, this.commandBarButtonTypes, bttnbkgdImg.width, buttonBackgroundCount)), jsx.jsx("sprite-batch", null, jsx.jsx("sprite", { static: true, image: lendcapImg, palette: sidebarPalette }), new Array(buttonBackgroundCount).fill(0).map((_, index) => jsx.jsx("sprite", {
             static: true,
             image: bttnbkgdImg,
             palette: sidebarPalette,
@@ -428,7 +445,7 @@ export class Hud extends UiObject {
             static: true,
             image: rendcapImg,
             palette: sidebarPalette,
-            x: sidebarBounds.x - rendcapImg.width,
+            x: layoutBarWidth - rendcapImg.width,
         }))), jsx.jsx(Messages, {
             messages: this.messageList,
             chatHistory: this.chatHistory,
