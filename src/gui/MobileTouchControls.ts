@@ -6,6 +6,8 @@ export type MobileJoystickPanHandler = (nx: number, ny: number) => void;
 let joystickPanHandler: MobileJoystickPanHandler | undefined;
 let controlsVisible = false;
 let controlsRoot: HTMLElement | undefined;
+/** Force-release active joystick (e.g. when HUD hides mid-drag). */
+let forceReleaseJoystick: (() => void) | undefined;
 
 export function getMobileTouchButton(): number {
   return mobileTouchButton;
@@ -27,6 +29,8 @@ export function setMobileTouchControlsVisible(visible: boolean): void {
   }
   if (!visible) {
     mobileTouchButton = 0;
+    // Finger may still be down when match UI hides — always spring the stick back.
+    forceReleaseJoystick?.();
   }
 }
 
@@ -136,20 +140,94 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
     }
   };
 
+  const endJoystick = (pointerId: number): void => {
+    if (joystickPointerId !== pointerId) {
+      return;
+    }
+    joystickPointerId = undefined;
+    window.removeEventListener('pointerup', onJoystickWindowUp, true);
+    window.removeEventListener('pointercancel', onJoystickWindowUp, true);
+    window.removeEventListener('blur', onWindowBlur);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('touchend', onTouchEndOrCancel, true);
+    window.removeEventListener('touchcancel', onTouchEndOrCancel, true);
+    joystick.removeEventListener('lostpointercapture', onJoystickLostCapture);
+    try {
+      joystick.releasePointerCapture?.(pointerId);
+    } catch {
+      // ignore — may already be released
+    }
+    resetKnob();
+    stopPanLoop();
+  };
+
+  const onJoystickWindowUp = (e: PointerEvent): void => {
+    endJoystick(e.pointerId);
+  };
+
+  const onJoystickLostCapture = (e: PointerEvent): void => {
+    // Capture can drop without a clean pointerup on some mobile browsers.
+    endJoystick(e.pointerId);
+  };
+
+  const releaseActiveJoystick = (): void => {
+    if (joystickPointerId !== undefined) {
+      endJoystick(joystickPointerId);
+    } else {
+      resetKnob();
+      stopPanLoop();
+    }
+  };
+
+  const onWindowBlur = (): void => {
+    releaseActiveJoystick();
+  };
+
+  const onVisibilityChange = (): void => {
+    if (document.hidden) {
+      releaseActiveJoystick();
+    }
+  };
+
+  /** Failsafe when pointerup is dropped but touchend still fires (all fingers up). */
+  const onTouchEndOrCancel = (_e: TouchEvent): void => {
+    if (joystickPointerId === undefined) {
+      return;
+    }
+    if (_e.touches.length === 0) {
+      releaseActiveJoystick();
+    }
+  };
+
+  forceReleaseJoystick = releaseActiveJoystick;
+
   const onJoystickPointerDown = (e: PointerEvent): void => {
     e.preventDefault();
     e.stopPropagation();
+    // Previous drag stuck? Clear it so a new touch can take over.
     if (joystickPointerId !== undefined) {
-      return;
+      endJoystick(joystickPointerId);
     }
     joystickPointerId = e.pointerId;
-    joystick.setPointerCapture?.(e.pointerId);
+    try {
+      joystick.setPointerCapture?.(e.pointerId);
+    } catch {
+      // Capture optional; window capture-phase listeners still release correctly.
+    }
     const rect = joystick.getBoundingClientRect();
     joystickCenter = {
       x: rect.left + rect.width / 2,
       y: rect.top + rect.height / 2,
     };
     joystick.classList.add('active');
+    // Capture phase: still receive release if game canvas stopsPropagation on bubble.
+    window.addEventListener('pointerup', onJoystickWindowUp, true);
+    window.addEventListener('pointercancel', onJoystickWindowUp, true);
+    window.addEventListener('touchend', onTouchEndOrCancel, true);
+    window.addEventListener('touchcancel', onTouchEndOrCancel, true);
+    window.addEventListener('blur', onWindowBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    joystick.addEventListener('lostpointercapture', onJoystickLostCapture);
     updateStickFromPoint(e.clientX, e.clientY);
   };
 
@@ -162,20 +240,13 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
     updateStickFromPoint(e.clientX, e.clientY);
   };
 
-  const onJoystickPointerUp = (e: PointerEvent): void => {
+  // Also listen on window for move so drag stays smooth if capture is flaky.
+  const onJoystickWindowMove = (e: PointerEvent): void => {
     if (joystickPointerId !== e.pointerId) {
       return;
     }
     e.preventDefault();
-    e.stopPropagation();
-    joystickPointerId = undefined;
-    try {
-      joystick.releasePointerCapture?.(e.pointerId);
-    } catch {
-      // ignore
-    }
-    resetKnob();
-    stopPanLoop();
+    updateStickFromPoint(e.clientX, e.clientY);
   };
 
   const endRightHold = (pointerId: number): void => {
@@ -207,8 +278,7 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
 
   joystick.addEventListener('pointerdown', onJoystickPointerDown);
   joystick.addEventListener('pointermove', onJoystickPointerMove);
-  joystick.addEventListener('pointerup', onJoystickPointerUp);
-  joystick.addEventListener('pointercancel', onJoystickPointerUp);
+  window.addEventListener('pointermove', onJoystickWindowMove, { passive: false });
 
   const blockTouch = (e: Event): void => {
     e.preventDefault();
@@ -218,8 +288,8 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
   cluster.addEventListener('touchmove', blockTouch, { passive: false });
 
   return () => {
-    stopPanLoop();
-    resetKnob();
+    forceReleaseJoystick = undefined;
+    releaseActiveJoystick();
     if (rightHoldPointerId !== undefined) {
       endRightHold(rightHoldPointerId);
     }
@@ -233,8 +303,7 @@ export function createMobileTouchControls(container: HTMLElement): () => void {
 
     joystick.removeEventListener('pointerdown', onJoystickPointerDown);
     joystick.removeEventListener('pointermove', onJoystickPointerMove);
-    joystick.removeEventListener('pointerup', onJoystickPointerUp);
-    joystick.removeEventListener('pointercancel', onJoystickPointerUp);
+    window.removeEventListener('pointermove', onJoystickWindowMove);
 
     cluster.removeEventListener('touchstart', blockTouch);
     cluster.removeEventListener('touchmove', blockTouch);
