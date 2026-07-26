@@ -10,10 +10,15 @@ export const RANDOM_COUNTRY_NAME = "Random";
 export const OBS_COUNTRY_NAME = "Observer";
 export const aiUiNames = new Map<AiDifficulty, string>()
     .set(AiDifficulty.Easy, "GUI:AIDummy")
-    .set(AiDifficulty.Normal, "GUI:AINormal")
+    .set(AiDifficulty.Normal, "GUI:AISimple")
+    .set(AiDifficulty.Hard, "GUI:AINormal")
+    .set(AiDifficulty.Brutal, "GUI:AIBrutal")
     .set(AiDifficulty.Custom, "GUI:AICustom");
 export const aiUiTooltips = new Map<AiDifficulty, string>()
-    .set(AiDifficulty.Normal, "GUI:AINormal:Tooltip")
+    .set(AiDifficulty.Easy, "GUI:AIDummy:Tooltip")
+    .set(AiDifficulty.Normal, "GUI:AISimple:Tooltip")
+    .set(AiDifficulty.Hard, "GUI:AINormal:Tooltip")
+    .set(AiDifficulty.Brutal, "GUI:AIBrutal:Tooltip")
     .set(AiDifficulty.Custom, "GUI:AICustom:Tooltip");
 export const RANDOM_COUNTRY_UI_NAME = "GUI:RandomEx";
 export const RANDOM_COUNTRY_UI_TOOLTIP = "STT:PlayerSideRandom";

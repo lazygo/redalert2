@@ -98,6 +98,17 @@ export class GameApi {
             radarDisabled: !!player.radarTrait?.isDisabled(),
         };
     }
+    /** Deterministic credit grant for bot difficulty cheats (lockstep-safe if all clients run same logic). */
+    grantCredits(playerName: string, amount: number): void {
+        if (!amount) {
+            return;
+        }
+        const player = this.game.getPlayerByName(playerName);
+        if (!player || player.defeated) {
+            return;
+        }
+        player.credits = Math.max(0, player.credits + amount);
+    }
     getAllTerrainObjects(): any[] {
         return this.game
             .getWorld()

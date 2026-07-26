@@ -4,6 +4,13 @@ import { DummyBot } from './DummyBot';
 import { BuiltInBotAdapter } from '../ai/thirdpartbot/builtIn/BuiltInBotAdapter';
 import { BotRegistry } from '../ai/thirdpartbot/BotRegistry';
 import { ThirdPartyBotAdapter } from '../ai/thirdpartbot/ThirdPartyBotAdapter';
+import {
+    BRUTAL_BOT_PROFILE,
+    NORMAL_BOT_PROFILE,
+    SIMPLE_BOT_PROFILE,
+    type BotDifficultyProfile,
+} from '../ai/thirdpartbot/builtIn/bot/BotDifficultyProfile';
+
 export class BotFactory {
     private botsLib: any;
     constructor(botsLib: any) {
@@ -39,17 +46,35 @@ export class BotFactory {
                 return new ThirdPartyBotAdapter(player.name, player.country.name, meta);
             }
             console.warn(`[BotFactory] Custom AI selected but no uploaded bot found, falling back to BuiltInBotAdapter`);
-            return new BuiltInBotAdapter(player.name, player.country.name);
+            return new BuiltInBotAdapter(player.name, player.country.name, SIMPLE_BOT_PROFILE);
         }
-        if (player.aiDifficulty === AiDifficulty.Normal) {
-            return new BuiltInBotAdapter(player.name, player.country.name);
+
+        const profile = this.profileForDifficulty(player.aiDifficulty);
+        if (profile) {
+            return new BuiltInBotAdapter(player.name, player.country.name, profile);
         }
-        if (player.aiDifficulty === AiDifficulty.Easy ||
+
+        if (
+            player.aiDifficulty === AiDifficulty.Easy ||
             player.aiDifficulty === AiDifficulty.Medium ||
-            player.aiDifficulty === AiDifficulty.MediumSea ||
-            player.aiDifficulty === AiDifficulty.Brutal) {
+            player.aiDifficulty === AiDifficulty.MediumSea
+        ) {
             return new DummyBot(player.name, player.country.name);
         }
+
         throw new Error(`Unsupported AI difficulty "${player.aiDifficulty}"`);
+    }
+
+    private profileForDifficulty(difficulty: AiDifficulty): BotDifficultyProfile | undefined {
+        switch (difficulty) {
+            case AiDifficulty.Normal:
+                return SIMPLE_BOT_PROFILE;
+            case AiDifficulty.Hard:
+                return NORMAL_BOT_PROFILE;
+            case AiDifficulty.Brutal:
+                return BRUTAL_BOT_PROFILE;
+            default:
+                return undefined;
+        }
     }
 }

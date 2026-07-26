@@ -8,6 +8,11 @@ import { SupabotContext } from "../logic/common/context";
 import { MissionController } from "../logic/mission/missionController";
 import { DebugLogger } from "../logic/common/utils";
 import { Compositions, getValidCompositions, SideComposition } from "./compositionUtils";
+import {
+    SIMPLE_BOT_PROFILE,
+    scaleCompositionCounts,
+    type BotDifficultyProfile,
+} from "../BotDifficultyProfile";
 
 // These could be loaded from ai.ini
 const DEFAULT_COMPOSITIONS: Compositions = {
@@ -90,11 +95,25 @@ const DEFAULT_COMPOSITIONS: Compositions = {
 };
 
 export class DefaultStrategy implements Strategy {
-    private expansionFactory = new ExpansionMissionFactory();
+    private expansionFactory: ExpansionMissionFactory;
     private scoutingFactory = new ScoutingMissionFactory();
-    private attackFactory = new AttackMissionFactory();
+    private attackFactory: AttackMissionFactory;
     private defenceFactory = new DefenceMissionFactory();
     private engineerFactory = new EngineerMissionFactory();
+
+    constructor(private profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
+        this.expansionFactory = new ExpansionMissionFactory(
+            Number.MIN_VALUE,
+            profile.expandBeforeTicks,
+            profile.conyardPackCooldownTicks,
+        );
+        this.attackFactory = new AttackMissionFactory(
+            -profile.visibleAttackCooldownTicks,
+            profile.visibleAttackCooldownTicks,
+            profile.baseAttackCooldownTicks,
+            profile.maxPreparingAttacks,
+        );
+    }
 
     onAiUpdate(context: SupabotContext, missionController: MissionController, logger: DebugLogger) {
         this.expansionFactory.maybeCreateMissions(context, missionController, logger);
@@ -128,6 +147,6 @@ export class DefaultStrategy implements Strategy {
 
         const randomIndex = context.game.generateRandomInt(0, validCompositions.length - 1);
         const compositionId = validCompositions[randomIndex];
-        return DEFAULT_COMPOSITIONS[compositionId];
+        return scaleCompositionCounts(DEFAULT_COMPOSITIONS[compositionId], this.profile.compositionSizeMultiplier);
     }
 }

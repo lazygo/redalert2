@@ -305,11 +305,15 @@ export class PackConyardMission extends Mission {
     }
 }
 
-const CONYARD_PACK_COOLDOWN = 15 * 60 * 6; // 6 mins
-const DO_NOT_EXPAND_BEFORE_TICKS = 15 * 60 * 6; // 6 minutes
+const CONYARD_PACK_COOLDOWN_DEFAULT = 15 * 60 * 6; // 6 mins
+const DO_NOT_EXPAND_BEFORE_TICKS_DEFAULT = 15 * 60 * 6; // 6 minutes
 
 export class ExpansionMissionFactory {
-    constructor(private lastConyardPackAt = Number.MIN_VALUE) {}
+    constructor(
+        private lastConyardPackAt = Number.MIN_VALUE,
+        private expandBeforeTicks: number = DO_NOT_EXPAND_BEFORE_TICKS_DEFAULT,
+        private conyardPackCooldownTicks: number = CONYARD_PACK_COOLDOWN_DEFAULT,
+    ) {}
     getName(): string {
         return "ExpansionMissionFactory";
     }
@@ -321,7 +325,7 @@ export class ExpansionMissionFactory {
         const expandToCandidates = matchAwareness.getNextExpansionCandidates();
 
         // This is used for deploying the initial MCV.
-        if (game.getCurrentTick() < DO_NOT_EXPAND_BEFORE_TICKS) {
+        if (game.getCurrentTick() < this.expandBeforeTicks) {
             mcvs.forEach((mcv) => {
                 missionController.addMission(
                     new ExpansionMission("initial-deploy-mcv-" + mcv, 100, mcv, [playerData.startLocation], logger),
@@ -341,8 +345,8 @@ export class ExpansionMissionFactory {
         }
 
         if (
-            game.getCurrentTick() < DO_NOT_EXPAND_BEFORE_TICKS ||
-            game.getCurrentTick() < this.lastConyardPackAt + CONYARD_PACK_COOLDOWN
+            game.getCurrentTick() < this.expandBeforeTicks ||
+            game.getCurrentTick() < this.lastConyardPackAt + this.conyardPackCooldownTicks
         ) {
             return;
         }

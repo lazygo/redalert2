@@ -5,6 +5,11 @@ import { Countries } from './bot/logic/common/utils';
 import { ObjectType } from '@/engine/type/ObjectType';
 import { QueueType, QueueStatus } from '@/game/player/production/ProductionQueue';
 import { OrderType } from '@/game/order/OrderType';
+import {
+    SIMPLE_BOT_PROFILE,
+    NORMAL_BOT_PROFILE,
+    type BotDifficultyProfile,
+} from './bot/BotDifficultyProfile';
 
 /**
  * BuiltInBotAdapter — wraps the real BuiltInBot.
@@ -25,9 +30,9 @@ export class BuiltInBotAdapter extends Bot {
     private static readonly FAIL_SAFE_BUILD_ORDER_ALLIED = ['GAPOWR', 'GAREFN', 'GAPILE', 'GAWEAP'];
     private static readonly FAIL_SAFE_BUILD_ORDER_SOVIET = ['NAPOWR', 'NAREFN', 'NAHAND', 'NAWEAP'];
 
-    constructor(name: string, country: string) {
+    constructor(name: string, country: string, profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
         super(name, country);
-        this.innerBot = new BuiltInBot(name, country as Countries);
+        this.innerBot = new BuiltInBot(name, country as Countries, [], true, undefined, profile);
     }
 
     override setGameApi(api: any): void {
@@ -270,18 +275,18 @@ export class BuiltInBotAdapter extends Bot {
 export function registerBuiltInBot(): void {
     BotRegistry.getInstance().register({
         id: 'builtIn-bot',
-        displayName: 'AI-普通 (BuiltIn)',
+        displayName: '普通 (BuiltIn)',
         version: '0.6.1',
         author: 'BuiltIn',
-        description: 'Normal difficulty AI. Full strategy system with missions, threat analysis, and build prioritization.',
+        description: 'Enhanced BuiltIn strategy bot (normal difficulty profile).',
         factory: (name: string, country: string) => {
-            const bot = new BuiltInBotAdapter(name, country);
+            const bot = new BuiltInBotAdapter(name, country, NORMAL_BOT_PROFILE);
             return {
                 id: 'builtIn-bot',
-                displayName: 'AI-普通 (BuiltIn)',
+                displayName: '普通 (BuiltIn)',
                 version: '0.6.1',
                 author: 'BuiltIn',
-                description: 'Normal difficulty AI',
+                description: 'Enhanced BuiltIn strategy bot',
                 onGameStart: (gameApi: any) => bot.onGameStart(gameApi),
                 onGameTick: (gameApi: any) => bot.onGameTick(gameApi),
                 onGameEvent: (event: any, _data: any) => bot.onGameEvent(event),
