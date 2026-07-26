@@ -26,7 +26,6 @@ export const FLAT_LAZY_MIXES = new Set<string>([
     "generic.mix",
     "isogen.mix",
     "cameo.mix",
-    "cameocd.mix",
     "isotemp.mix",
     "temperat.mix",
     "tem.mix",
@@ -38,8 +37,6 @@ export const FLAT_LAZY_MIXES = new Set<string>([
     "urban.mix",
     "sidec01.mix",
     "sidec02.mix",
-    "sidec01cd.mix",
-    "sidec02cd.mix",
     "multi.mix",
     "language.mix",
 ]);

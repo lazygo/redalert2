@@ -20,6 +20,10 @@ import (
 
 const stampFile = ".cache-stamp.json"
 
+// unpackerID must change when extract lists / flat manifest shape changes so
+// Ensure rebuilds even if source MIX hashes are unchanged.
+const unpackerID = "internal/mix (pure Go) v2"
+
 // SourceMixes are the only files operators need to keep in the game-res directory.
 var SourceMixes = []string{
 	"ra2.mix",
@@ -67,7 +71,9 @@ func Ensure(opts Options) error {
 		return err
 	}
 	if !opts.Force {
-		if prev, ok := readStamp(filepath.Join(opts.CacheDir, stampFile)); ok && prev.SourceHash == hash {
+		if prev, ok := readStamp(filepath.Join(opts.CacheDir, stampFile)); ok &&
+			prev.SourceHash == hash &&
+			prev.Unpacker == unpackerID {
 			if _, err := os.Stat(filepath.Join(opts.CacheDir, "manifest.json")); err == nil {
 				opts.logf("mixcache: up to date (%s, %d source files)", hash[:12], len(files))
 				return nil
@@ -81,7 +87,7 @@ func Ensure(opts Options) error {
 	st := stamp{
 		BuiltAt:     time.Now().UTC(),
 		SourceHash:  hash,
-		Unpacker:    "internal/mix (pure Go)",
+		Unpacker:    unpackerID,
 		SourceFiles: files,
 	}
 	raw, _ := json.MarshalIndent(st, "", "  ")
