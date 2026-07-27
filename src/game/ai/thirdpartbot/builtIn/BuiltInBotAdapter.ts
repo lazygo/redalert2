@@ -33,7 +33,7 @@ export class BuiltInBotAdapter extends Bot {
     constructor(name: string, country: string, profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
         super(name, country);
         this.profile = profile;
-        this.innerBot = new BuiltInBot(name, country as Countries, [], true, undefined, profile);
+        this.innerBot = new BuiltInBot(name, country as Countries, [], false, undefined, profile);
     }
 
     override setGameApi(api: any): void {
@@ -63,10 +63,8 @@ export class BuiltInBotAdapter extends Bot {
     }
 
     override onGameStart(event: any): void {
-        console.log(`[BuiltInBotAdapter] onGameStart called for "${this.name}" country="${this.country}"`);
         try {
             this.innerBot.onGameStart(event);
-            console.log(`[BuiltInBotAdapter] onGameStart completed for "${this.name}"`);
         } catch (e) {
             console.error(`[BuiltInBotAdapter] onGameStart FAILED for "${this.name}":`, e);
             throw e;

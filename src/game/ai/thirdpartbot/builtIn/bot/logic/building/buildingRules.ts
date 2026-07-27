@@ -14,7 +14,7 @@ import { ArtilleryUnit } from "./artilleryUnit";
 import { BasicAirUnit } from "./basicAirUnit";
 import { BasicBuilding } from "./basicBuilding";
 import { BasicGroundUnit } from "./basicGroundUnit";
-import { PowerPlant } from "./powerPlant";
+import { PowerPlant, NuclearReactor } from "./powerPlant";
 import { ResourceCollectionBuilding } from "./resourceCollectionBuilding";
 import { Harvester } from "./harvester";
 import { uniqBy } from "../common/utils";
@@ -227,7 +227,7 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["HARV", new Harvester(15, 4, 2)], // War Miner
     ["NADEPT", new RepairDepotBuilding()], // Repair Depot — unlocks MCV
     ["NARADR", new BasicBuilding(12, 1, 400)], // Radar
-    ["NANRCT", new PowerPlant()], // Nuclear Reactor
+    ["NANRCT", new NuclearReactor()], // Nuclear Reactor
     ["NAYARD", new NavalYardBuilding(8)], // Naval Yard
 
     ["NATECH", new BasicBuilding(22, 1, 2800)], // Soviet Battle Lab
@@ -259,7 +259,7 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["CHAR", new Harvester(15, 4, 2)],
     ["CADEPT", new RepairDepotBuilding()],
     ["CARADR", new BasicBuilding(12, 2, 400)],
-    ["CANRCT", new PowerPlant()],
+    ["CANRCT", new NuclearReactor()],
     ["CAYARD", new NavalYardBuilding(8)],
     ["CATECH", new BasicBuilding(22, 1, 2800)],
     ["CAWALL", new AntiGroundStaticDefence(0, 0, 0, 0)],

@@ -42,7 +42,8 @@ export class BuiltInBot extends Bot {
         name: string,
         country: Countries,
         private tryAllyWith: string[] = [],
-        private enableLogging = true,
+        /** Verbose AI console logging — only on when debug mode is enabled for this bot. */
+        private enableLogging = false,
         strategy?: Strategy,
         profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE,
     ) {
@@ -50,6 +51,12 @@ export class BuiltInBot extends Bot {
         this.profile = profile;
         this.strategy = strategy ?? new DefaultStrategy(profile);
         this.queueController = new QueueController();
+    }
+
+    override setDebugMode(debug: boolean): Bot {
+        super.setDebugMode(debug);
+        this.enableLogging = debug;
+        return this;
     }
 
     private strategy: Strategy;
@@ -105,8 +112,8 @@ export class BuiltInBot extends Bot {
             return;
         }
 
-        // Periodic heartbeat log
-        if (game.getCurrentTick() % 300 === 0) {
+        // Periodic heartbeat log (debug bots only).
+        if (this.enableLogging && game.getCurrentTick() % 300 === 0) {
             const myPlayer = game.getPlayerData(this.name);
             const conYards = game.getVisibleUnits(this.name, 'self', (r) => r.constructionYard);
             const allUnits = game.getVisibleUnits(this.name, 'self');
