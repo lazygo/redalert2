@@ -9,6 +9,7 @@ import { manageMoveMicro } from "./squads/common";
 import { MissionContext, SupabotContext } from "../../common/context";
 import { UnitComposition } from "../../../strategy/strategy";
 import { SideComposition } from "../../../strategy/compositionUtils";
+import { AttackWaveKind, AttackWavePlanner } from "../../../strategy/attackWavePlanner";
 
 export enum AttackFailReason {
     NoTargets = "NoTargets",
@@ -17,7 +18,7 @@ export enum AttackFailReason {
     OutOfUnits = "OutOfUnits",
 }
 
-enum AttackMissionState {
+export enum AttackMissionState {
     Preparing = 0,
     Attacking = 1,
     Retreating = 2,
@@ -43,6 +44,7 @@ export class AttackMission extends Mission<AttackFailReason> {
     private state: AttackMissionState = AttackMissionState.Preparing;
     private requestedUnitCount: number;
     private lastRequestedUnitCountDecayAt: number | null = null;
+    private readonly squadDecayTicks: number | null;
 
     constructor(
         uniqueName: string,
@@ -52,10 +54,12 @@ export class AttackMission extends Mission<AttackFailReason> {
         private radius: number,
         private composition: SideComposition,
         logger: DebugLogger,
+        squadDecayTicks: number | null = null,
     ) {
         super(uniqueName, logger);
         this.squad = new CombatSquad(rallyArea, attackArea, radius);
         this.requestedUnitCount = composition.maximumUnits;
+        this.squadDecayTicks = squadDecayTicks;
     }
 
     _onAiUpdate(context: MissionContext): MissionAction {
@@ -71,7 +75,7 @@ export class AttackMission extends Mission<AttackFailReason> {
 
     private handlePreparingState(context: MissionContext) {
         const { game } = context;
-        this.decayDesiredCompositionIfNeeded(game);
+        this.decayDesiredCompositionIfNeeded(game, context);
         if (this.requestedUnitCount < this.composition.minimumUnits) {
             return disbandMission(AttackFailReason.UnableToAcquireUnits);
         }
@@ -97,7 +101,7 @@ export class AttackMission extends Mission<AttackFailReason> {
     }
 
     private handleAttackingState(context: MissionContext) {
-        const { game, matchAwareness, actionBatcher } = context;
+        const { game, matchAwareness } = context;
         const playerData = game.getPlayerData(context.player.name);
         if (this.getUnitIds().length === 0) {
             // TODO: disband directly (we no longer retreat when losing)
@@ -152,6 +156,10 @@ export class AttackMission extends Mission<AttackFailReason> {
         return this.state;
     }
 
+    public getAttackArea(): Vector2 {
+        return this.attackArea;
+    }
+
     // This mission can give up its units while preparing.
     public isUnitsLocked(): boolean {
         return this.state !== AttackMissionState.Preparing;
@@ -161,14 +169,18 @@ export class AttackMission extends Mission<AttackFailReason> {
         return this.priority;
     }
 
-    private decayDesiredCompositionIfNeeded(game: GameApi): void {
+    private decayDesiredCompositionIfNeeded(game: GameApi, context: MissionContext): void {
+        const decayInterval =
+            this.squadDecayTicks ??
+            context.botProfile?.attackSquadDecayTicks ??
+            REQUESTED_UNIT_COUNT_DECAY_TICKS;
         const currentTick = game.getCurrentTick();
         if (this.lastRequestedUnitCountDecayAt === null) {
             this.lastRequestedUnitCountDecayAt = currentTick;
             return;
         }
 
-        if (currentTick <= this.lastRequestedUnitCountDecayAt + REQUESTED_UNIT_COUNT_DECAY_TICKS) {
+        if (currentTick <= this.lastRequestedUnitCountDecayAt + decayInterval) {
             return;
         }
 
@@ -207,7 +219,7 @@ const getTargetWeight: (unitData: UnitData, tryFocusHarvester: boolean) => numbe
 function generateTarget(
     gameApi: GameApi,
     playerData: PlayerData,
-    matchAwareness: MatchAwareness,
+    _matchAwareness: MatchAwareness,
     includeBaseLocations: boolean = false,
 ): Vector2 | null {
     // Randomly decide between harvester and base.
@@ -262,6 +274,7 @@ export class AttackMissionFactory {
         private visibleAttackCooldownTicks: number = DEFAULT_VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS,
         private baseAttackCooldownTicks: number = DEFAULT_BASE_ATTACK_COOLDOWN_TICKS,
         private maxPreparingAttacks: number = 2,
+        private wavePlanner?: AttackWavePlanner,
     ) {}
 
     getName(): string {
@@ -272,32 +285,65 @@ export class AttackMissionFactory {
         context: SupabotContext,
         missionController: MissionController,
         logger: DebugLogger,
-        composition: SideComposition,
+        getComposition: (wave: AttackWaveKind) => SideComposition | null,
     ): void {
         const { game, matchAwareness } = context;
         const playerData = game.getPlayerData(context.player.name);
+        const profile = context.botProfile;
+
+        const wave: AttackWaveKind =
+            profile?.alternateAttackWaves && this.wavePlanner
+                ? this.wavePlanner.chooseWave(context)
+                : "assault";
+
+        const composition = getComposition(wave);
         if (!composition) {
             return;
         }
 
-        if (game.getCurrentTick() < this.lastAttackAt + this.visibleAttackCooldownTicks) {
+        const isHarass = wave === "harass";
+        const cooldownTicks = isHarass
+            ? (profile?.harassAttackCooldownTicks ??
+              Math.floor(this.visibleAttackCooldownTicks * 0.55))
+            : this.visibleAttackCooldownTicks;
+
+        if (game.getCurrentTick() < this.lastAttackAt + cooldownTicks) {
             return;
         }
 
-        // Limit concurrent preparing attacks.
-        const preparingCount = missionController
+        const attackMissions = missionController
             .getMissions()
-            .filter(
-                (mission): mission is AttackMission =>
-                    mission instanceof AttackMission && mission.getState() === AttackMissionState.Preparing,
-            ).length;
+            .filter((mission): mission is AttackMission => mission instanceof AttackMission);
+
+        const useBatching = profile?.batchAttacks && (!profile.alternateAttackWaves || !isHarass);
+        if (useBatching) {
+            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Attacking)) {
+                return;
+            }
+            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
+                return;
+            }
+        } else if (profile?.alternateAttackWaves) {
+            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Attacking)) {
+                return;
+            }
+            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
+                return;
+            }
+        }
+
+        // Limit concurrent preparing attacks.
+        const preparingCount = attackMissions.filter(
+            (mission) => mission.getState() === AttackMissionState.Preparing,
+        ).length;
         if (preparingCount >= this.maxPreparingAttacks) {
             return;
         }
 
         const attackRadius = 10;
 
-        const includeEnemyBases = game.getCurrentTick() > this.lastAttackAt + this.baseAttackCooldownTicks;
+        const includeEnemyBases =
+            !isHarass && game.getCurrentTick() > this.lastAttackAt + this.baseAttackCooldownTicks;
 
         const attackArea = generateTarget(game, playerData, matchAwareness, includeEnemyBases);
 
@@ -305,7 +351,8 @@ export class AttackMissionFactory {
             return;
         }
 
-        const squadName = "attack_" + game.getCurrentTick();
+        const squadName = `${wave}_${game.getCurrentTick()}`;
+        const squadDecayTicks = isHarass ? (profile?.harassSquadDecayTicks ?? 100) : (profile?.attackSquadDecayTicks ?? null);
 
         const tryAttack = missionController.addMission(
             new AttackMission(
@@ -316,12 +363,16 @@ export class AttackMissionFactory {
                 attackRadius,
                 composition,
                 logger,
+                squadDecayTicks,
             ).withOnFinish((unitIds, reason) => {
                 logger(
-                    `Attack ${squadName} (${JSON.stringify(composition)}) with ${
+                    `Attack ${squadName} (${wave}, ${JSON.stringify(composition)}) with ${
                         unitIds.length
                     } units finished with reason: ${reason}`,
                 );
+                if (profile?.alternateAttackWaves) {
+                    this.wavePlanner?.recordLaunch(wave);
+                }
                 missionController.addMission(
                     new RetreatMission(
                         "retreat-from-" + squadName + game.getCurrentTick(),
@@ -334,6 +385,7 @@ export class AttackMissionFactory {
         );
         if (tryAttack) {
             this.lastAttackAt = game.getCurrentTick();
+            logger(`Launched ${wave} wave: ${squadName}`);
         }
     }
 }

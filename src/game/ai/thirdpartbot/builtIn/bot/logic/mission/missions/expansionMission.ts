@@ -29,6 +29,9 @@ import { ActionBatcher } from "../actionBatcher";
 import { getCachedTechnoRules } from "../../common/rulesCache";
 import { canBuildOnTile } from "../../common/tileUtils";
 import { MissionContext, SupabotContext } from "../../common/context";
+import {
+    getDesiredMobileMcvCount,
+} from "./mcvReserveMission";
 
 const ORDER_COOLDOWN_TICKS = 60;
 
@@ -323,6 +326,8 @@ export class ExpansionMissionFactory {
         const playerData = game.getPlayerData(player.name);
         const mcvs = game.getVisibleUnits(player.name, "self", (r) => game.getGeneralRules().baseUnit.includes(r.name));
         const expandToCandidates = matchAwareness.getNextExpansionCandidates();
+        const savage = context.botProfile?.fortifyBase === true;
+        const desiredMcvs = savage ? getDesiredMobileMcvCount(game, playerData) : 0;
 
         // This is used for deploying the initial MCV.
         if (game.getCurrentTick() < this.expandBeforeTicks) {
@@ -337,6 +342,12 @@ export class ExpansionMissionFactory {
                     new ExpansionMission("expansion-mcv-" + mcv, 100, mcv, expandToCandidates, logger),
                 );
             });
+            // Savage: queue expansion for MCVs still being produced toward the reserve target.
+            if (savage && mcvs.length < desiredMcvs) {
+                missionController.addMission(
+                    new ExpansionMission("expansion-mcv-pending", 100, null, expandToCandidates, logger),
+                );
+            }
         }
 
         const threatCache = matchAwareness.getThreatCache();

@@ -75,6 +75,7 @@ const DEFENCE_CHECK_TICKS = 30;
 
 // Starting radius around the player's base to trigger defense.
 const DEFENCE_STARTING_RADIUS = 6;
+const SAVAGE_DEFENCE_STARTING_RADIUS = 14;
 // Every game tick, we increase the defendable area by this amount.
 const DEFENCE_RADIUS_INCREASE_PER_GAME_TICK = 0.0001;
 
@@ -96,8 +97,10 @@ export class DefenceMissionFactory {
 
         const defendablePoints = this.getDefendablePoints(context);
 
+        const savage = context.botProfile?.fortifyBase === true;
         const defendableRadius =
-            DEFENCE_STARTING_RADIUS + DEFENCE_RADIUS_INCREASE_PER_GAME_TICK * game.getCurrentTick();
+            (savage ? SAVAGE_DEFENCE_STARTING_RADIUS : DEFENCE_STARTING_RADIUS) +
+            DEFENCE_RADIUS_INCREASE_PER_GAME_TICK * game.getCurrentTick();
         for (const defendablePoint of defendablePoints) {
             const enemiesNearPoint = matchAwareness
                 .getHostilesNearPoint2d(defendablePoint, defendableRadius)
@@ -126,8 +129,24 @@ export class DefenceMissionFactory {
 
     private getDefendablePoints(context: SupabotContext) {
         const { game, player } = context;
+        const savage = context.botProfile?.fortifyBase === true;
         return game
-            .getVisibleUnits(player.name, "self", (r) => r.constructionYard || r.name === "AMCV" || r.name === "SMCV")
+            .getVisibleUnits(
+                player.name,
+                "self",
+                (r) =>
+                    !!r.constructionYard ||
+                    r.name === "AMCV" ||
+                    r.name === "SMCV" ||
+                    (savage &&
+                        (r.name === "GAREF" ||
+                            r.name === "NAREF" ||
+                            r.name === "GAPOWR" ||
+                            r.name === "NAPOWR" ||
+                            r.name === "NANRCT" ||
+                            r.name === "GAWEAP" ||
+                            r.name === "NAWEAP")),
+            )
             .map((unitId) => game.getGameObjectData(unitId))
             .filter((unit): unit is GameObjectData => unit != null)
             .map((unit) => toVector2(unit.tile));

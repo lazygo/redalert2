@@ -5,11 +5,8 @@ import { Countries } from './bot/logic/common/utils';
 import { ObjectType } from '@/engine/type/ObjectType';
 import { QueueType, QueueStatus } from '@/game/player/production/ProductionQueue';
 import { OrderType } from '@/game/order/OrderType';
-import {
-    SIMPLE_BOT_PROFILE,
-    NORMAL_BOT_PROFILE,
-    type BotDifficultyProfile,
-} from './bot/BotDifficultyProfile';
+import { NORMAL_BOT_PROFILE, SIMPLE_BOT_PROFILE, type BotDifficultyProfile } from "./bot/BotDifficultyProfile";
+import { countNavalYards, getDesiredNavalYardCount, isNavalYardName } from "./bot/logic/building/navalYardBuilding";
 
 /**
  * BuiltInBotAdapter — wraps the real BuiltInBot.
@@ -19,6 +16,7 @@ import {
  */
 export class BuiltInBotAdapter extends Bot {
     private innerBot: BuiltInBot;
+    private readonly profile: BotDifficultyProfile;
     private failSafePendingBuildingType: string | null = null;
     private lastFailSafeDeployTick: number = -9999;
     private failSafeDeployAttempts: number = 0;
@@ -32,6 +30,7 @@ export class BuiltInBotAdapter extends Bot {
 
     constructor(name: string, country: string, profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
         super(name, country);
+        this.profile = profile;
         this.innerBot = new BuiltInBot(name, country as Countries, [], true, undefined, profile);
     }
 
@@ -181,9 +180,17 @@ export class BuiltInBotAdapter extends Bot {
             return;
         }
 
+        const ownedBuildingNames: Set<string> = new Set(
+            gameApi
+                .getVisibleUnits(this.name, 'self', (r: any) => r.type === ObjectType.Building)
+                .map((id: any) => gameApi.getGameObjectData(id)?.name)
+                .filter((n: any) => !!n),
+        );
+
         const available = this.productionApi
             .getAvailableObjects(QueueType.Structures)
-            .map((o: any) => o.name);
+            .map((o: any) => o.name)
+            .filter((name: string) => this.isFailSafeStructure(name, gameApi));
         if (available.length === 0) {
             return;
         }
@@ -192,13 +199,6 @@ export class BuiltInBotAdapter extends Bot {
             ? BuiltInBotAdapter.FAIL_SAFE_BUILD_ORDER_ALLIED
             : BuiltInBotAdapter.FAIL_SAFE_BUILD_ORDER_SOVIET;
 
-        const ownedBuildingNames = new Set(
-            gameApi
-                .getVisibleUnits(this.name, 'self', (r: any) => r.type === ObjectType.Building)
-                .map((id: any) => gameApi.getGameObjectData(id)?.name)
-                .filter((n: any) => !!n),
-        );
-
         let nextBuild = buildOrder.find((name) => {
             if (!available.includes(name)) {
                 return false;
@@ -206,6 +206,16 @@ export class BuiltInBotAdapter extends Bot {
             // Allow building extra power if needed.
             if (name.endsWith('POWR')) {
                 return true;
+            }
+            if (isNavalYardName(name)) {
+                const playerData = gameApi.getPlayerData(this.name);
+                const yardRules = this.productionApi
+                    .getAvailableObjects(QueueType.Structures)
+                    .find((o: any) => o.name === name);
+                if (!yardRules) {
+                    return false;
+                }
+                return countNavalYards(gameApi, playerData) < getDesiredNavalYardCount(gameApi, playerData, yardRules);
             }
             return !ownedBuildingNames.has(name);
         });
@@ -266,6 +276,24 @@ export class BuiltInBotAdapter extends Bot {
     private isAlliedCountry(countryName: string): boolean {
         const c = (countryName || '').toLowerCase();
         return BuiltInBotAdapter.ALLIED_COUNTRIES.some((name) => name.toLowerCase() === c);
+    }
+
+    /** Fail-safe must not spam naval yards; respect dynamic capacity like NavalYardBuilding. */
+    private isFailSafeStructure(name: string, gameApi: any): boolean {
+        if (!isNavalYardName(name)) {
+            return true;
+        }
+        if (!this.profile.enableNavy) {
+            return false;
+        }
+        const playerData = gameApi.getPlayerData(this.name);
+        const yardRules = this.productionApi
+            .getAvailableObjects(QueueType.Structures)
+            .find((o: any) => o.name === name);
+        if (!yardRules) {
+            return false;
+        }
+        return countNavalYards(gameApi, playerData) < getDesiredNavalYardCount(gameApi, playerData, yardRules);
     }
 }
 

@@ -33,6 +33,21 @@ export interface BotDifficultyProfile {
     useSpecialists?: boolean;
     /** Prefer stronger air / artillery attack compositions (Kirov, Black Eagle, V3, Harriers). */
     boostAir?: boolean;
+    /** Gather one larger wave at a time instead of many small squads (assault phase). */
+    batchAttacks?: boolean;
+    /** Weighted harass vs assault waves (not strict alternation). */
+    alternateAttackWaves?: boolean;
+    /** Floor for minimumUnits on standard assault compositions. */
+    minAttackWaveUnits?: number;
+    /** Ticks before shrinking desired assault squad size while preparing. */
+    attackSquadDecayTicks?: number;
+    /** Harass wave size (alternateAttackWaves). */
+    harassWaveUnits?: number;
+    harassWaveMaxUnits?: number;
+    /** Cooldown between harassment raids (defaults to ~55% of visibleAttackCooldownTicks). */
+    harassAttackCooldownTicks?: number;
+    /** Faster decay while preparing a harass squad. */
+    harassSquadDecayTicks?: number;
 }
 
 /** Current BuiltInBot defaults — used for AI-简单. */
@@ -81,9 +96,9 @@ export const BRUTAL_BOT_PROFILE: BotDifficultyProfile = {
 export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
     id: 'savage',
     botApm: 480,
-    visibleAttackCooldownTicks: 18,
-    baseAttackCooldownTicks: 140,
-    maxPreparingAttacks: 5,
+    visibleAttackCooldownTicks: 50,
+    baseAttackCooldownTicks: 160,
+    maxPreparingAttacks: 1,
     compositionSizeMultiplier: 2.2,
     expandBeforeTicks: 15 * 60 * 1.8,
     conyardPackCooldownTicks: 15 * 60 * 2,
@@ -95,18 +110,45 @@ export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
     fortifyBase: true,
     useSpecialists: true,
     boostAir: true,
+    batchAttacks: true,
+    alternateAttackWaves: true,
+    minAttackWaveUnits: 12,
+    attackSquadDecayTicks: 240,
+    harassWaveUnits: 4,
+    harassWaveMaxUnits: 6,
+    harassAttackCooldownTicks: 32,
+    harassSquadDecayTicks: 100,
 };
+
+export function scaleHarassComposition<T extends { minimumUnits: number; maximumUnits: number }>(
+    composition: T,
+    minUnits: number,
+    maxUnits: number,
+): T {
+    return {
+        ...composition,
+        minimumUnits: minUnits,
+        maximumUnits: Math.max(maxUnits, minUnits),
+    };
+}
 
 export function scaleCompositionCounts<T extends { minimumUnits: number; maximumUnits: number }>(
     composition: T,
     multiplier: number,
+    minWaveUnits?: number,
 ): T {
-    if (multiplier === 1) {
+    if (multiplier === 1 && !minWaveUnits) {
         return composition;
+    }
+    let minimumUnits = Math.max(1, Math.round(composition.minimumUnits * multiplier));
+    let maximumUnits = Math.max(1, Math.round(composition.maximumUnits * multiplier));
+    if (minWaveUnits !== undefined) {
+        minimumUnits = Math.max(minimumUnits, minWaveUnits);
+        maximumUnits = Math.max(maximumUnits, minimumUnits + Math.round(minWaveUnits * 0.35));
     }
     return {
         ...composition,
-        minimumUnits: Math.max(1, Math.round(composition.minimumUnits * multiplier)),
-        maximumUnits: Math.max(1, Math.round(composition.maximumUnits * multiplier)),
+        minimumUnits,
+        maximumUnits,
     };
 }
