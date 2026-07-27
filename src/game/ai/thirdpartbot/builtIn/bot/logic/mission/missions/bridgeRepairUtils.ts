@@ -30,6 +30,17 @@ export function hasActiveAttackMissions(context: SupabotContext, missionControll
     return getActiveAttackRoutePoints(context, missionController).length > 0;
 }
 
+/** True when units are actively fighting — excludes grand-assault hoarding at the rally. */
+export function hasLaunchedAttackMissions(
+    _context: SupabotContext,
+    missionController: MissionController,
+): boolean {
+    return missionController
+        .getMissions()
+        .filter((m): m is AttackMission => m instanceof AttackMission)
+        .some((m) => m.getState() === AttackMissionState.Attacking);
+}
+
 function areSectorsConnected(
     sectorCache: SectorCache,
     from: Vector2,

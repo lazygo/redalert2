@@ -23,6 +23,7 @@ import type { GlobalThreat } from "../logic/threat/threat";
 import { AttackWaveKind, AttackWavePlanner } from "./attackWavePlanner";
 import { HarvesterHarassMissionFactory } from "../logic/mission/missions/harvesterHarassMission";
 import { StrategicFocusPlanner } from "./strategicFocusPlanner";
+import { GrandAssaultPlanner } from "./grandAssaultPlanner";
 
 const DEFAULT_COMPOSITIONS: Compositions = {
     conscripts: {
@@ -241,7 +242,9 @@ export class DefaultStrategy implements Strategy {
     private mcvReserveFactory: McvReserveMissionFactory;
     private spyFactory = new SpyMissionFactory();
     private wavePlanner = new AttackWavePlanner();
-    private focusPlanner = new StrategicFocusPlanner();
+    private grandAssaultPlanner = new GrandAssaultPlanner();
+    private focusPlanner = new StrategicFocusPlanner(this.grandAssaultPlanner);
+    private lastGrandDebugAt = -9999;
 
     constructor(private profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
         this.expansionFactory = new ExpansionMissionFactory(
@@ -257,6 +260,7 @@ export class DefaultStrategy implements Strategy {
             profile.maxPreparingAttacks,
             this.wavePlanner,
             this.focusPlanner,
+            this.grandAssaultPlanner,
         );
         this.mcvReserveFactory = new McvReserveMissionFactory(this.focusPlanner);
     }
@@ -268,6 +272,12 @@ export class DefaultStrategy implements Strategy {
         }
 
         this.focusPlanner.onTick(context, missionController);
+
+        const tick = context.game.getCurrentTick();
+        if (this.profile.grandAssaultMode && tick > this.lastGrandDebugAt + 15 * 30) {
+            this.lastGrandDebugAt = tick;
+            logger(this.grandAssaultPlanner.getDebugProgress(context), false);
+        }
 
         this.expansionFactory.maybeCreateMissions(context, missionController, logger);
         this.mcvReserveFactory.maybeCreateMissions(context, missionController, logger);
@@ -323,6 +333,8 @@ export class DefaultStrategy implements Strategy {
             if (harassPool.length > 0) {
                 candidates = harassPool;
             }
+        } else if (wave === "grand_assault") {
+            candidates = candidates.filter((id) => !NAVY_COMPOSITIONS.has(id));
         }
 
         let chosenId: string;
@@ -343,12 +355,30 @@ export class DefaultStrategy implements Strategy {
             );
         }
 
+        if (wave === "grand_assault") {
+            logger(`Attack composition (grand assault): ${chosenId}`);
+            const minWave = SMALL_WAVE_COMPOSITIONS.has(chosenId)
+                ? undefined
+                : this.profile.minAttackWaveUnits;
+            return scaleCompositionCounts(base, this.profile.compositionSizeMultiplier, minWave);
+        }
+
         logger(`Attack composition (assault): ${chosenId} (from ${candidates.join(", ")})`);
         const minWave =
             this.profile.batchAttacks && !SMALL_WAVE_COMPOSITIONS.has(chosenId)
                 ? this.profile.minAttackWaveUnits
                 : undefined;
-        return scaleCompositionCounts(base, this.profile.compositionSizeMultiplier, minWave);
+        const scaled = scaleCompositionCounts(base, this.profile.compositionSizeMultiplier, minWave);
+        if (this.profile.batchAttacks) {
+            const launchFloor = scaled.minimumUnits;
+            const assaultCap =
+                launchFloor + Math.max(2, Math.round((this.profile.minAttackWaveUnits ?? 4) * 0.75));
+            return {
+                ...scaled,
+                maximumUnits: Math.min(scaled.maximumUnits, assaultCap),
+            };
+        }
+        return scaled;
     }
 
     /**
@@ -390,6 +420,17 @@ export class DefaultStrategy implements Strategy {
                 }
                 if (SPECIALIST_COMPOSITIONS.has(id)) {
                     score += 4;
+                }
+            }
+            if (wave === "grand_assault") {
+                if (ANTI_GROUND_COMPOSITIONS.has(id)) {
+                    score += 6;
+                }
+                if (ARTILLERY_COMPOSITIONS.has(id)) {
+                    score += 3;
+                }
+                if (SPECIALIST_COMPOSITIONS.has(id)) {
+                    score -= 4;
                 }
             }
             if (!threat) {

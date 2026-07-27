@@ -422,12 +422,14 @@ export class Minimap extends UiObject {
         }
     }
     createViewportOutline(width: number, height: number): THREE.Line {
+        const safeWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
+        const safeHeight = Number.isFinite(height) ? Math.max(0, height) : 0;
         const geometry = new THREE.BufferGeometry();
         const vertices = new Float32Array([
             0, 0, 0,
-            0, height, 0,
-            width, height, 0,
-            width, 0, 0,
+            0, safeHeight, 0,
+            safeWidth, safeHeight, 0,
+            safeWidth, 0, 0,
             0, 0, 0,
         ]);
         geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
@@ -439,12 +441,14 @@ export class Minimap extends UiObject {
         return new THREE.Line(geometry, material);
     }
     updateOutlineSize(outline: THREE.Line, width: number, height: number): void {
+        const safeWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
+        const safeHeight = Number.isFinite(height) ? Math.max(0, height) : 0;
         const geometry = outline.geometry as THREE.BufferGeometry;
         const vertices = new Float32Array([
             0, 0, 0,
-            0, height, 0,
-            width, height, 0,
-            width, 0, 0,
+            0, safeHeight, 0,
+            safeWidth, safeHeight, 0,
+            safeWidth, 0, 0,
             0, 0, 0,
         ]);
         geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));

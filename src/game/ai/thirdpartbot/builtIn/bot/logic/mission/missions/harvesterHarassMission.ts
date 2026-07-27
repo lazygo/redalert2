@@ -1,6 +1,7 @@
 import { GameApi, PlayerData, SideType, UnitData, Vector2 } from "../../../../game-api";
 import { DebugLogger } from "../../common/utils";
 import { MissionContext, SupabotContext } from "../../common/context";
+import { isBrutalOrSavageProfile } from "../../../BotDifficultyProfile";
 import { Mission, MissionAction, disbandMission, noop, requestUnitsWithSamePriority } from "../mission";
 import { MissionController } from "../missionController";
 import { manageAttackMicro, manageMoveMicro } from "./squads/common";
@@ -143,6 +144,9 @@ export class HarvesterHarassMissionFactory {
     }
 
     maybeCreateMissions(context: SupabotContext, missionController: MissionController, logger: DebugLogger): void {
+        if (!isBrutalOrSavageProfile(context.botProfile)) {
+            return;
+        }
         const { game } = context;
         const tick = game.getCurrentTick();
         if (tick < this.lastCheckAt + CHECK_COOLDOWN_TICKS) {

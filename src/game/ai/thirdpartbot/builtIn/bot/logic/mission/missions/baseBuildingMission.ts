@@ -8,9 +8,16 @@ import {
     DEFAULT_BUILDING_PRIORITY,
     getDefaultPlacementLocation,
 } from "../../building/buildingRules";
-import { applySavageStructurePriority, isSavageStaticDefence } from "../../building/savageBuildingPolicy";
+import {
+    applySavageStructurePriority,
+    computeSavageRedundantProductionPriority,
+    isSavageProductionStructure,
+    isSavageStaticDefence,
+    resolveSavageProductionMaxCount,
+} from "../../building/savageBuildingPolicy";
 import { getSavageStaticDefencePlacement } from "../../building/common";
 import { queueTypeToName } from "../../building/queueController";
+import { numBuildingsOwnedOfName } from "../../building/buildingRules";
 
 // Legacy mission encompassing the old "build queue" logic.
 export class BaseBuildingMission extends Mission {
@@ -75,6 +82,26 @@ export class BaseBuildingMission extends Mission {
             let logic = BUILDING_NAME_TO_RULES.get(option.name)!;
             let priority = logic.getPriority(game, playerStatus, option, threatCache);
             if (context.botProfile?.fortifyBase) {
+                if (isSavageProductionStructure(option.name)) {
+                    const savageMax = resolveSavageProductionMaxCount(
+                        option.name,
+                        game,
+                        playerStatus,
+                        context.botProfile,
+                    );
+                    const owned = numBuildingsOwnedOfName(game, playerStatus, option.name);
+                    if (savageMax !== null && owned >= savageMax) {
+                        return -100;
+                    }
+                    if (priority <= -100 && savageMax !== null && owned < savageMax) {
+                        priority = computeSavageRedundantProductionPriority(
+                            option.name,
+                            game,
+                            playerStatus,
+                            context.botProfile,
+                        );
+                    }
+                }
                 priority = applySavageStructurePriority(option.name, priority, game, playerStatus);
             }
             return priority;

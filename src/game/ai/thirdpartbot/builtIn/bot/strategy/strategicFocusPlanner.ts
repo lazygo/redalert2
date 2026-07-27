@@ -1,7 +1,8 @@
 import { SupabotContext } from "../logic/common/context";
 import { MissionController } from "../logic/mission/missionController";
-import { hasActiveAttackMissions } from "../logic/mission/missions/bridgeRepairUtils";
+import { hasActiveAttackMissions, hasLaunchedAttackMissions } from "../logic/mission/missions/bridgeRepairUtils";
 import { countConyards, countMobileMcvs } from "../logic/mission/missions/mcvReserveMission";
+import type { GrandAssaultPlanner } from "./grandAssaultPlanner";
 
 /** ~45s expand window at 15 tps */
 const EXPAND_WINDOW_TICKS = 15 * 45;
@@ -17,29 +18,56 @@ export class StrategicFocusPlanner {
     private expandWindowEndTick = 0;
     private lastOpportunityCheckTick = 0;
     private hasActiveAttack = false;
+    private hasLaunchedAttack = false;
+
+    constructor(private grandAssault?: GrandAssaultPlanner) {}
 
     onTick(context: SupabotContext, missionController: MissionController): void {
         this.hasActiveAttack = hasActiveAttackMissions(context, missionController);
-        this.maybeOpenExpandOpportunity(context);
+        this.hasLaunchedAttack = hasLaunchedAttackMissions(context, missionController);
+        if (!context.botProfile?.grandAssaultMode) {
+            this.maybeOpenExpandOpportunity(context);
+        }
     }
 
     onAttackLaunched(context: SupabotContext): void {
+        if (context.botProfile?.grandAssaultMode) {
+            return;
+        }
         this.expandWindowEndTick = 0;
     }
 
     onAttackFinished(context: SupabotContext): void {
+        if (context.botProfile?.grandAssaultMode) {
+            return;
+        }
         if (this.countCombatants(context) >= MIN_ARMY_FOR_EXPAND && context.game.generateRandom() < 0.4) {
             this.openExpandWindow(context);
         }
     }
 
+    onExpansionCommitted(context: SupabotContext): void {
+        this.expandWindowEndTick = 0;
+        this.grandAssault?.onExpansionCommitted(context);
+    }
+
     isExpandWindowActive(context: SupabotContext): boolean {
+        if (context.botProfile?.grandAssaultMode && this.grandAssault) {
+            return this.grandAssault.isExpandWindowActive(context);
+        }
         return context.game.getCurrentTick() < this.expandWindowEndTick;
     }
 
     shouldInvestInExpansion(context: SupabotContext): boolean {
-        if (this.hasActiveAttack) {
+        const combatBlocksExpansion = context.botProfile?.grandAssaultMode
+            ? this.hasLaunchedAttack
+            : this.hasActiveAttack;
+        if (combatBlocksExpansion) {
             return false;
+        }
+
+        if (context.botProfile?.grandAssaultMode && this.grandAssault) {
+            return this.grandAssault.shouldInvestInExpansion(context);
         }
 
         const tick = context.game.getCurrentTick();
@@ -62,6 +90,9 @@ export class StrategicFocusPlanner {
     }
 
     shouldPackConyardToExpand(context: SupabotContext): boolean {
+        if (context.botProfile?.grandAssaultMode && this.grandAssault) {
+            return this.grandAssault.shouldPackConyardToExpand(context);
+        }
         return this.shouldInvestInExpansion(context) && this.isExpandWindowActive(context);
     }
 

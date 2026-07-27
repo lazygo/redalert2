@@ -30,6 +30,7 @@ import { getCachedTechnoRules } from "../../common/rulesCache";
 import { canBuildOnTile } from "../../common/tileUtils";
 import { MissionContext, SupabotContext } from "../../common/context";
 import type { StrategicFocusPlanner } from "../../../strategy/strategicFocusPlanner";
+import { isSavageProfile } from "../../../BotDifficultyProfile";
 
 const ORDER_COOLDOWN_TICKS = 60;
 
@@ -334,7 +335,7 @@ export class ExpansionMissionFactory {
                 );
             });
         } else if (expandToCandidates.length > 0) {
-            const savage = context.botProfile?.fortifyBase === true;
+            const savage = isSavageProfile(context.botProfile);
             const allowExpansion =
                 !savage || (this.focusPlanner?.shouldInvestInExpansion(context) ?? false);
 
@@ -377,13 +378,14 @@ export class ExpansionMissionFactory {
             .filter(isTechnoRulesObject)
             .filter((obj) => obj.rules.refinery);
         if (refineryNearconyard.length > 0) {
-            const savage = context.botProfile?.fortifyBase === true;
+            const savage = isSavageProfile(context.botProfile);
             if (savage && this.focusPlanner && !this.focusPlanner.shouldPackConyardToExpand(context)) {
                 return;
             }
             missionController.addMission(
                 new PackConyardMission("pack-up-" + selectedConyard.id, selectedConyard.id, logger),
             );
+            this.focusPlanner?.onExpansionCommitted(context);
             logger("Time to pack the conyard and expand", false);
             this.lastConyardPackAt = game.getCurrentTick();
         } else {
