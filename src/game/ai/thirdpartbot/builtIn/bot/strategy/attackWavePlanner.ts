@@ -1,7 +1,9 @@
 import { SupabotContext } from "../logic/common/context";
 
-/** Attack wave style — harassment probes vs main assault pushes. */
-export type AttackWaveKind = "harass" | "assault";
+/** Attack wave style — harass probes, legacy assault, or savage grand assault (总攻). */
+export type AttackWaveKind = "harass" | "assault" | "grand_assault";
+
+export const GRAND_ASSAULT_WAVE_PREFIX = "grand_assault_";
 
 /**
  * Picks harass vs assault with weighted randomness and situational bias.

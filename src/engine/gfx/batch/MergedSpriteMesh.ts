@@ -63,13 +63,21 @@ export class MergedSpriteMesh extends THREE.Mesh {
         const uvAttr = attributes.uv as THREE.BufferAttribute;
         const colorMultAttr = attributes.vertexColorMult as THREE.BufferAttribute;
         const paletteOffsetAttr = attributes.vertexPaletteOffset as THREE.BufferAttribute;
-        const meshCount = meshes.length;
+        const validMeshes: any[] = [];
+        for (const mesh of meshes) {
+            mesh.updateMatrixWorld(true);
+            tempVector3.setFromMatrixPosition(mesh.matrixWorld);
+            if (MergedSpriteMesh.isFiniteVector3(tempVector3)) {
+                validMeshes.push(mesh);
+            }
+        }
+        const meshCount = validMeshes.length;
         if (meshCount > this.maxInstances) {
             throw new RangeError('Exceeded maximum number of instances');
         }
         for (let i = 0; i < meshCount; i++) {
             const vertexOffset = i * this.verticesPerItem;
-            const mesh = meshes[i];
+            const mesh = validMeshes[i];
             this.setGeometryAt(vertexOffset, mesh.geometry, tempVector3.setFromMatrixPosition(mesh.matrixWorld), positionAttr, uvAttr);
             const extraLight = mesh.getExtraLight();
             if (colorMultAttr) {
@@ -78,6 +86,9 @@ export class MergedSpriteMesh extends THREE.Mesh {
             if (paletteOffsetAttr) {
                 this.setPaletteIndexAt(vertexOffset, mesh.getPaletteIndex(), paletteOffsetAttr);
             }
+        }
+        for (let i = meshCount; i < this.maxInstances; i++) {
+            this.clearInstanceGeometryAt(i * this.verticesPerItem, positionAttr);
         }
         this.geometry.setDrawRange(0, meshCount * (this.geometry.index ? this.indicesPerItem! : this.verticesPerItem));
         for (const attribute of Object.values(attributes)) {
@@ -91,8 +102,78 @@ export class MergedSpriteMesh extends THREE.Mesh {
                 }
             }
         }
+        this.refreshBoundingSphere(meshCount, positionAttr);
+    }
+    private static isFiniteVector3(v: THREE.Vector3): boolean {
+        return Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+    }
+    private clearInstanceGeometryAt(vertexOffset: number, positionAttr: THREE.BufferAttribute): void {
+        const targetPositions = positionAttr.array as Float32Array;
+        for (let i = 0; i < this.verticesPerItem; i++) {
+            const targetIndex = 3 * (vertexOffset + i);
+            if (targetPositions[targetIndex] !== 0 ||
+                targetPositions[targetIndex + 1] !== 0 ||
+                targetPositions[targetIndex + 2] !== 0) {
+                targetPositions[targetIndex] = 0;
+                targetPositions[targetIndex + 1] = 0;
+                targetPositions[targetIndex + 2] = 0;
+                positionAttr.needsUpdate = true;
+            }
+        }
+    }
+    /** Avoid THREE recomputing a bounding sphere over stale / cleared instance slots. */
+    private refreshBoundingSphere(meshCount: number, positionAttr: THREE.BufferAttribute): void {
+        if (meshCount === 0) {
+            if (!this.geometry.boundingSphere) {
+                this.geometry.boundingSphere = new THREE.Sphere();
+            }
+            this.geometry.boundingSphere.center.set(0, 0, 0);
+            this.geometry.boundingSphere.radius = 0;
+            return;
+        }
+        const targetPositions = positionAttr.array as Float32Array;
+        const vertexFloats = meshCount * this.verticesPerItem * 3;
+        let minX = Infinity;
+        let minY = Infinity;
+        let minZ = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        let maxZ = -Infinity;
+        for (let i = 0; i < vertexFloats; i += 3) {
+            const x = targetPositions[i];
+            const y = targetPositions[i + 1];
+            const z = targetPositions[i + 2];
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+                continue;
+            }
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            minZ = Math.min(minZ, z);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+            maxZ = Math.max(maxZ, z);
+        }
+        if (!Number.isFinite(minX)) {
+            if (!this.geometry.boundingSphere) {
+                this.geometry.boundingSphere = new THREE.Sphere();
+            }
+            this.geometry.boundingSphere.center.set(0, 0, 0);
+            this.geometry.boundingSphere.radius = 0;
+            return;
+        }
+        if (!this.geometry.boundingSphere) {
+            this.geometry.boundingSphere = new THREE.Sphere();
+        }
+        this.geometry.boundingSphere.center.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+        const dx = maxX - minX;
+        const dy = maxY - minY;
+        const dz = maxZ - minZ;
+        this.geometry.boundingSphere.radius = Math.sqrt(dx * dx + dy * dy + dz * dz) / 2;
     }
     private setGeometryAt(vertexOffset: number, sourceGeometry: THREE.BufferGeometry, worldPosition: THREE.Vector3, positionAttr: THREE.BufferAttribute, uvAttr: THREE.BufferAttribute): void {
+        if (!MergedSpriteMesh.isFiniteVector3(worldPosition)) {
+            return;
+        }
         const sourceAttributes = sourceGeometry.attributes;
         const sourcePositions = sourceAttributes.position.array as Float32Array;
         const targetPositions = positionAttr.array as Float32Array;
@@ -102,6 +183,9 @@ export class MergedSpriteMesh extends THREE.Mesh {
             const x = Math.fround(sourcePositions[sourceIndex] + Math.fround(worldPosition.x));
             const y = Math.fround(sourcePositions[sourceIndex + 1] + Math.fround(worldPosition.y));
             const z = Math.fround(sourcePositions[sourceIndex + 2] + Math.fround(worldPosition.z));
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+                continue;
+            }
             if (x !== targetPositions[targetIndex] ||
                 y !== targetPositions[targetIndex + 1] ||
                 z !== targetPositions[targetIndex + 2]) {

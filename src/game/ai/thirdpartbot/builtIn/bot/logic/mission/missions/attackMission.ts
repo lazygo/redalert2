@@ -1,6 +1,6 @@
 import { GameApi, ObjectType, PlayerData, UnitData, Vector2 } from "../../../../game-api";
 import { CombatSquad } from "./squads/combatSquad";
-import { Mission, MissionAction, disbandMission, noop, requestUnits } from "../mission";
+import { Mission, MissionAction, disbandMission, grabCombatants, noop, requestUnits } from "../mission";
 import { MatchAwareness } from "../../awareness";
 import { MissionController } from "../missionController";
 import { RetreatMission } from "./retreatMission";
@@ -9,8 +9,10 @@ import { manageMoveMicro } from "./squads/common";
 import { MissionContext, SupabotContext } from "../../common/context";
 import { UnitComposition } from "../../../strategy/strategy";
 import { SideComposition } from "../../../strategy/compositionUtils";
-import { AttackWaveKind, AttackWavePlanner } from "../../../strategy/attackWavePlanner";
+import { AttackWaveKind, AttackWavePlanner, GRAND_ASSAULT_WAVE_PREFIX } from "../../../strategy/attackWavePlanner";
 import type { StrategicFocusPlanner } from "../../../strategy/strategicFocusPlanner";
+import { GRAND_ASSAULT_FILL_PRIORITY, GrandAssaultPlanner } from "../../../strategy/grandAssaultPlanner";
+import { hasWarFactory } from "./mcvReserveMission";
 
 export enum AttackFailReason {
     NoTargets = "NoTargets",
@@ -29,6 +31,10 @@ const NO_TARGET_RETARGET_TICKS = 300;
 const NO_TARGET_IDLE_TIMEOUT_TICKS = 600;
 /** Abort a preparing wave that never launches — frees batch-attack slots. */
 const PREPARING_MAX_TICKS = 15 * 60;
+/** After this many ticks with enough units, stop hoarding and attack. */
+const PREPARING_LAUNCH_AFTER_TICKS = 45;
+const GRAND_ASSAULT_LAUNCH_MAX_WAIT_TICKS = 15 * 90;
+const RALLY_GRAB_RADIUS = 14;
 
 const ATTACK_MISSION_PRIORITY_RAMP = 1.02;
 /** Above base-guard fill (22) but below garrison hold (58) so attacks get factory output without stripping guards. */
@@ -51,6 +57,11 @@ export class AttackMission extends Mission<AttackFailReason> {
     private preparingSinceTick: number | null = null;
     private readonly squadDecayTicks: number | null;
     private readonly fastLaunch: boolean;
+    private readonly waveKind: AttackWaveKind;
+    private readonly targetHoardSize: number | null;
+    private readonly lockOnFirstAssign: boolean;
+    private onLaunchCallback?: () => void;
+    private launchNotified = false;
 
     constructor(
         uniqueName: string,
@@ -63,12 +74,30 @@ export class AttackMission extends Mission<AttackFailReason> {
         squadDecayTicks: number | null = null,
         compactRally: boolean = false,
         fastLaunch: boolean = false,
+        waveKind: AttackWaveKind = "assault",
+        targetHoardSize?: number,
+        lockOnFirstAssign: boolean = false,
     ) {
         super(uniqueName, logger);
         this.squad = new CombatSquad(rallyArea, attackArea, radius, compactRally);
-        this.requestedUnitCount = composition.maximumUnits;
+        this.waveKind = waveKind;
+        this.targetHoardSize = targetHoardSize ?? null;
+        this.lockOnFirstAssign = lockOnFirstAssign;
+        // Fast-launch waves only queue up to the minimum — avoids factory spam and rally hoarding.
+        if (waveKind === "grand_assault" && targetHoardSize !== undefined) {
+            this.requestedUnitCount = targetHoardSize;
+        } else {
+            this.requestedUnitCount = fastLaunch
+                ? composition.minimumUnits
+                : composition.maximumUnits;
+        }
         this.squadDecayTicks = squadDecayTicks;
         this.fastLaunch = fastLaunch;
+    }
+
+    withOnLaunch(callback: () => void): this {
+        this.onLaunchCallback = callback;
+        return this;
     }
 
     _onAiUpdate(context: MissionContext): MissionAction {
@@ -83,6 +112,9 @@ export class AttackMission extends Mission<AttackFailReason> {
     }
 
     private handlePreparingState(context: MissionContext) {
+        if (this.waveKind === "grand_assault") {
+            return this.handleGrandAssaultPreparing(context);
+        }
         const { game } = context;
         const tick = game.getCurrentTick();
         if (this.preparingSinceTick === null) {
@@ -108,16 +140,18 @@ export class AttackMission extends Mission<AttackFailReason> {
         const desiredComposition = this.getDesiredComposition();
         const missingUnits = this.getMissingUnits(game, desiredComposition);
         const assignedCount = this.getUnitIds().length;
+
         if (
-            this.fastLaunch &&
             assignedCount >= this.composition.minimumUnits &&
-            missingUnits.length > 0
+            (this.fastLaunch || tick > this.preparingSinceTick! + PREPARING_LAUNCH_AFTER_TICKS)
         ) {
-            this.priority = ATTACK_MISSION_INITIAL_PRIORITY;
-            this.state = AttackMissionState.Attacking;
-            return noop();
+            return this.transitionToAttacking();
         }
+
         if (missingUnits.length > 0) {
+            if (assignedCount < this.composition.minimumUnits && tick % 4 !== 0) {
+                return grabCombatants(context.matchAwareness.getMainRallyPoint(), RALLY_GRAB_RADIUS);
+            }
             this.priority = Math.min(this.priority * ATTACK_MISSION_PRIORITY_RAMP, ATTACK_MISSION_MAX_PRIORITY);
             // distribute the priority among the amount of missing units of each type
             const totalMissingUnits = missingUnits.reduce((sum, [, numMissing]) => sum + numMissing, 0);
@@ -129,10 +163,65 @@ export class AttackMission extends Mission<AttackFailReason> {
             );
             return requestUnits(unitPriorities);
         } else {
-            this.priority = ATTACK_MISSION_INITIAL_PRIORITY;
-            this.state = AttackMissionState.Attacking;
-            return noop();
+            return this.transitionToAttacking();
         }
+    }
+
+    /** Savage grand assault: hoard at rally until target size, then launch; low factory priority. */
+    private handleGrandAssaultPreparing(context: MissionContext) {
+        const { game, matchAwareness } = context;
+        const tick = game.getCurrentTick();
+        if (this.preparingSinceTick === null) {
+            this.preparingSinceTick = tick;
+        } else if (tick > this.preparingSinceTick + PREPARING_MAX_TICKS) {
+            if (this.getUnitIds().length >= this.composition.minimumUnits) {
+                return this.transitionToAttacking();
+            }
+            return disbandMission(AttackFailReason.UnableToAcquireUnits);
+        }
+
+        const targetHoard =
+            this.targetHoardSize ??
+            Math.max(this.composition.minimumUnits, this.requestedUnitCount);
+        const assignedCount = this.getUnitIds().length;
+
+        if (
+            assignedCount >= targetHoard ||
+            (assignedCount >= this.composition.minimumUnits &&
+                tick > this.preparingSinceTick + GRAND_ASSAULT_LAUNCH_MAX_WAIT_TICKS)
+        ) {
+            return this.transitionToAttacking();
+        }
+
+        const desiredComposition = this.getDesiredComposition();
+        const missingUnits = this.getMissingUnits(game, desiredComposition);
+
+        if (missingUnits.length > 0) {
+            // Rally grab only until minimum is met — bulk hoard comes from factory output.
+            if (assignedCount < this.composition.minimumUnits && tick % 4 !== 0) {
+                return grabCombatants(matchAwareness.getMainRallyPoint(), RALLY_GRAB_RADIUS);
+            }
+            const totalMissingUnits = missingUnits.reduce((sum, [, numMissing]) => sum + numMissing, 0);
+            const unitPriorities = Object.fromEntries(
+                missingUnits.map(([unitName, numMissing]) => [
+                    unitName,
+                    (GRAND_ASSAULT_FILL_PRIORITY * numMissing) / totalMissingUnits,
+                ]),
+            );
+            return requestUnits(unitPriorities);
+        }
+
+        return noop();
+    }
+
+    private transitionToAttacking(): MissionAction {
+        if (!this.launchNotified && this.onLaunchCallback) {
+            this.launchNotified = true;
+            this.onLaunchCallback();
+        }
+        this.priority = ATTACK_MISSION_INITIAL_PRIORITY;
+        this.state = AttackMissionState.Attacking;
+        return noop();
     }
 
     private handleAttackingState(context: MissionContext) {
@@ -184,6 +273,16 @@ export class AttackMission extends Mission<AttackFailReason> {
     }
 
     public getGlobalDebugText(): string | undefined {
+        if (this.waveKind === "grand_assault") {
+            const hoard = this.targetHoardSize ?? this.requestedUnitCount;
+            const state =
+                this.state === AttackMissionState.Preparing
+                    ? "prep"
+                    : this.state === AttackMissionState.Attacking
+                      ? "atk"
+                      : "ret";
+            return `grand-${state}:${this.getUnitIds().length}/${hoard}`;
+        }
         return this.squad.getGlobalDebugText() ?? "<none>";
     }
 
@@ -195,12 +294,27 @@ export class AttackMission extends Mission<AttackFailReason> {
         return this.attackArea;
     }
 
-    // Lock units once assigned so base guard cannot strip a forming wave.
+    // Grand-assault hoard locks assigned units; savage harass locks on first assign.
     public isUnitsLocked(): boolean {
+        if (this.waveKind === "grand_assault") {
+            if (this.state === AttackMissionState.Attacking) {
+                return true;
+            }
+            if (this.state === AttackMissionState.Preparing) {
+                return this.getUnitIds().length > 0;
+            }
+            return true;
+        }
+        if (this.state === AttackMissionState.Attacking) {
+            return true;
+        }
         if (this.state !== AttackMissionState.Preparing) {
             return true;
         }
-        return this.getUnitIds().length > 0;
+        if (this.lockOnFirstAssign && this.getUnitIds().length > 0) {
+            return true;
+        }
+        return this.getUnitIds().length >= this.composition.minimumUnits;
     }
 
     public getPriority() {
@@ -208,6 +322,9 @@ export class AttackMission extends Mission<AttackFailReason> {
     }
 
     private decayDesiredCompositionIfNeeded(game: GameApi, context: MissionContext): void {
+        if (this.waveKind === "grand_assault") {
+            return;
+        }
         const decayInterval =
             this.squadDecayTicks ??
             context.botProfile?.attackSquadDecayTicks ??
@@ -223,6 +340,10 @@ export class AttackMission extends Mission<AttackFailReason> {
         }
 
         this.lastRequestedUnitCountDecayAt = currentTick;
+        if (this.fastLaunch) {
+            this.requestedUnitCount = Math.max(this.composition.minimumUnits, this.requestedUnitCount - 1);
+            return;
+        }
         this.requestedUnitCount--;
     }
 
@@ -321,6 +442,7 @@ export class AttackMissionFactory {
         private maxPreparingAttacks: number = 2,
         private wavePlanner?: AttackWavePlanner,
         private focusPlanner?: StrategicFocusPlanner,
+        private grandAssaultPlanner?: GrandAssaultPlanner,
     ) {}
 
     getName(): string {
@@ -333,14 +455,133 @@ export class AttackMissionFactory {
         logger: DebugLogger,
         getComposition: (wave: AttackWaveKind) => SideComposition | null,
     ): void {
+        const profile = context.botProfile;
+        if (profile?.grandAssaultMode) {
+            this.maybeCreateHarassMission(context, missionController, logger, getComposition);
+            this.maybeCreateGrandAssaultMission(context, missionController, logger, getComposition);
+            return;
+        }
+
+        this.maybeCreateWaveMission(context, missionController, logger, getComposition, "assault");
+    }
+
+    private maybeCreateHarassMission(
+        context: SupabotContext,
+        missionController: MissionController,
+        logger: DebugLogger,
+        getComposition: (wave: AttackWaveKind) => SideComposition | null,
+    ): void {
+        this.maybeCreateWaveMission(context, missionController, logger, getComposition, "harass");
+    }
+
+    /** Always keep one grand-assault hoard active; launch spawns the next hoard immediately. */
+    private maybeCreateGrandAssaultMission(
+        context: SupabotContext,
+        missionController: MissionController,
+        logger: DebugLogger,
+        getComposition: (wave: AttackWaveKind) => SideComposition | null,
+    ): void {
+        const { game, matchAwareness } = context;
+        const playerData = game.getPlayerData(context.player.name);
+        if (!hasWarFactory(game, playerData)) {
+            return;
+        }
+
+        const composition = getComposition("grand_assault");
+        if (!composition || !this.grandAssaultPlanner) {
+            return;
+        }
+
+        const attackMissions = missionController
+            .getMissions()
+            .filter((mission): mission is AttackMission => mission instanceof AttackMission);
+        const grandMissions = attackMissions.filter((mission) =>
+            mission.getUniqueName().startsWith(GRAND_ASSAULT_WAVE_PREFIX),
+        );
+        const grandPreparing = grandMissions.filter(
+            (mission) => mission.getState() === AttackMissionState.Preparing,
+        );
+        if (grandPreparing.length > 0) {
+            return;
+        }
+
+        const preparingCount = attackMissions.filter(
+            (mission) => mission.getState() === AttackMissionState.Preparing,
+        ).length;
+        if (preparingCount >= this.maxPreparingAttacks) {
+            return;
+        }
+
+        const includeEnemyBases = game.getCurrentTick() > this.lastAttackAt + this.baseAttackCooldownTicks;
+        const attackArea = generateTarget(
+            game,
+            playerData,
+            matchAwareness,
+            includeEnemyBases,
+            false,
+        );
+        if (!attackArea) {
+            return;
+        }
+
+        const targetHoard = this.grandAssaultPlanner.getTargetHoardSize(context, composition);
+        const squadName = `${GRAND_ASSAULT_WAVE_PREFIX}${game.getCurrentTick()}`;
+        const squadDecayTicks = context.botProfile?.attackSquadDecayTicks ?? null;
+
+        const tryAttack = missionController.addMission(
+            new AttackMission(
+                squadName,
+                GRAND_ASSAULT_FILL_PRIORITY,
+                matchAwareness.getMainRallyPoint(),
+                attackArea,
+                10,
+                composition,
+                logger,
+                squadDecayTicks,
+                false,
+                false,
+                "grand_assault",
+                targetHoard,
+            )
+                .withOnLaunch(() => {
+                    this.grandAssaultPlanner?.onGrandAssaultLaunched(context);
+                    logger(`Grand assault launched: ${squadName} (target ${targetHoard})`);
+                })
+                .withOnFinish((unitIds, reason) => {
+                    logger(
+                        `Grand assault ${squadName} finished with ${unitIds.length} units: ${reason}`,
+                    );
+                    missionController.addMission(
+                        new RetreatMission(
+                            "retreat-from-" + squadName + game.getCurrentTick(),
+                            matchAwareness.getMainRallyPoint(),
+                            unitIds,
+                            logger,
+                        ),
+                    );
+                }),
+        );
+        if (tryAttack) {
+            logger(`Started grand assault hoard: ${squadName} → ${targetHoard} units`);
+        }
+    }
+
+    private maybeCreateWaveMission(
+        context: SupabotContext,
+        missionController: MissionController,
+        logger: DebugLogger,
+        getComposition: (wave: AttackWaveKind) => SideComposition | null,
+        forcedWave?: AttackWaveKind,
+    ): void {
         const { game, matchAwareness } = context;
         const playerData = game.getPlayerData(context.player.name);
         const profile = context.botProfile;
 
         const wave: AttackWaveKind =
-            profile?.alternateAttackWaves && this.wavePlanner
+            forcedWave ??
+            (profile?.alternateAttackWaves && this.wavePlanner
                 ? this.wavePlanner.chooseWave(context)
-                : "assault";
+                : "assault");
 
         const composition = getComposition(wave);
         if (!composition) {
@@ -374,7 +615,7 @@ export class AttackMissionFactory {
             if (sameWaveMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
                 return;
             }
-        } else if (profile?.alternateAttackWaves) {
+        } else if (profile?.alternateAttackWaves && !profile.grandAssaultMode) {
             if (sameWaveMissions.some((mission) => mission.getState() === AttackMissionState.Attacking)) {
                 return;
             }
@@ -400,10 +641,16 @@ export class AttackMissionFactory {
             return;
         }
 
-        // Limit concurrent preparing attacks.
-        const preparingCount = attackMissions.filter(
-            (mission) => mission.getState() === AttackMissionState.Preparing,
-        ).length;
+        // Limit concurrent preparing attacks (grand assault has its own slot in savage mode).
+        const preparingCount = attackMissions.filter((mission) => {
+            if (mission.getState() !== AttackMissionState.Preparing) {
+                return false;
+            }
+            if (profile?.grandAssaultMode && mission.getUniqueName().startsWith(GRAND_ASSAULT_WAVE_PREFIX)) {
+                return false;
+            }
+            return true;
+        }).length;
         if (preparingCount >= this.maxPreparingAttacks) {
             return;
         }
@@ -441,6 +688,9 @@ export class AttackMissionFactory {
                 squadDecayTicks,
                 isHarass,
                 fastLaunch,
+                wave,
+                undefined,
+                !!profile?.grandAssaultMode && isHarass,
             ).withOnFinish((unitIds, reason) => {
                 logger(
                     `Attack ${squadName} (${wave}, ${JSON.stringify(composition)}) with ${
@@ -450,7 +700,7 @@ export class AttackMissionFactory {
                 if (profile?.alternateAttackWaves) {
                     this.wavePlanner?.recordLaunch(wave);
                 }
-                if (profile?.alternateAttackWaves || profile?.fortifyBase) {
+                if ((profile?.alternateAttackWaves || profile?.fortifyBase) && !profile?.grandAssaultMode) {
                     this.focusPlanner?.onAttackFinished(context);
                 }
                 missionController.addMission(
@@ -465,9 +715,6 @@ export class AttackMissionFactory {
         );
         if (tryAttack) {
             this.lastAttackAt = game.getCurrentTick();
-            if (profile?.alternateAttackWaves || profile?.fortifyBase) {
-                this.focusPlanner?.onAttackLaunched(context);
-            }
             logger(`Launched ${wave} wave: ${squadName}`);
         }
     }

@@ -48,6 +48,21 @@ export interface BotDifficultyProfile {
     harassAttackCooldownTicks?: number;
     /** Faster decay while preparing a harass squad. */
     harassSquadDecayTicks?: number;
+    /**
+     * Savage: hoard at base for grand assaults; harass/spy/oil/harvester raids stay independent.
+     * Expansion gates use factorial grand-assault launches (n conyards → n! assaults before next base).
+     */
+    grandAssaultMode?: boolean;
+}
+
+/** True for AI-残暴 profile checks (prefer over fortifyBase, which may be reused later). */
+export function isSavageProfile(profile?: BotDifficultyProfile): boolean {
+    return profile?.id === "savage";
+}
+
+/** AI-冷酷 & AI-残暴 — independent harvester harassment raids. */
+export function isBrutalOrSavageProfile(profile?: BotDifficultyProfile): boolean {
+    return profile?.id === "brutal" || profile?.id === "savage";
 }
 
 /** Current BuiltInBot defaults — used for AI-简单. */
@@ -99,7 +114,7 @@ export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
     visibleAttackCooldownTicks: 50,
     baseAttackCooldownTicks: 160,
     maxPreparingAttacks: 2,
-    compositionSizeMultiplier: 1.75,
+    compositionSizeMultiplier: 1.5,
     expandBeforeTicks: 15 * 60 * 1.8,
     conyardPackCooldownTicks: 15 * 60 * 2,
     cheatCreditsIntervalTicks: 15 * 12, // every ~12s
@@ -110,14 +125,15 @@ export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
     fortifyBase: true,
     useSpecialists: true,
     boostAir: true,
-    batchAttacks: true,
+    batchAttacks: false,
     alternateAttackWaves: true,
+    grandAssaultMode: true,
     minAttackWaveUnits: 4,
-    attackSquadDecayTicks: 120,
+    attackSquadDecayTicks: 70,
     harassWaveUnits: 3,
     harassWaveMaxUnits: 5,
     harassAttackCooldownTicks: 24,
-    harassSquadDecayTicks: 70,
+    harassSquadDecayTicks: 50,
 };
 
 export function scaleHarassComposition<T extends { minimumUnits: number; maximumUnits: number }>(

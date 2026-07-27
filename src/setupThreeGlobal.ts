@@ -47,6 +47,27 @@ if (!Object.getOwnPropertyDescriptor(bufferAttributeProto, 'updateRange')) {
         },
     });
 }
+const originalComputeBoundingSphere = bufferGeometryProto.computeBoundingSphere;
+if (originalComputeBoundingSphere) {
+    bufferGeometryProto.computeBoundingSphere = function computeBoundingSphereSafe(this: THREE.BufferGeometry) {
+        const position = this.attributes.position;
+        if (position) {
+            const array = position.array as ArrayLike<number>;
+            for (let i = 0; i < array.length; i++) {
+                if (!Number.isFinite(array[i])) {
+                    if (!this.boundingSphere) {
+                        this.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0);
+                    } else {
+                        this.boundingSphere.center.set(0, 0, 0);
+                        this.boundingSphere.radius = 0;
+                    }
+                    return this.boundingSphere;
+                }
+            }
+        }
+        return originalComputeBoundingSphere.call(this);
+    };
+}
 const legacyThree = Object.assign({}, THREE, {
     Math: {
         generateUUID: THREE.MathUtils.generateUUID,
