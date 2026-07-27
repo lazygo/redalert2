@@ -65,6 +65,12 @@ export class MoveOrder extends Order {
         }
     }
     isValid(): boolean {
+        if (this.sourceObject.isBuilding() && this.sourceObject.rallyTrait?.getRallyPoint()) {
+            this.feedbackType = OrderFeedbackType.RallyPoint;
+        }
+        else {
+            this.feedbackType = OrderFeedbackType.Move;
+        }
         if (this.sourceObject.isBuilding() &&
             (!this.sourceObject.rules.undeploysInto ||
                 (this.sourceObject.rules.constructionYard &&
