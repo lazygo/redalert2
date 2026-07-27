@@ -39,4 +39,7 @@ export interface UnitData extends GameObjectData {
     isWarpedOut: boolean;
     mindControlledBy?: string;
     tntTimer?: number;
+    /** Active disguise appearance (MakeupKit / PermaDisguise). */
+    disguiseUnitName?: string;
+    disguiseOwnerName?: string;
 }

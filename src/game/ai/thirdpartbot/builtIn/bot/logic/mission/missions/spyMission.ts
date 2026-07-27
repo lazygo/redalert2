@@ -13,6 +13,7 @@ import { MissionContext, SupabotContext } from "../../common/context";
 import { UnitComposition } from "../../../strategy/strategy";
 
 const INFILTRATE_COOLDOWN_TICKS = 40;
+const DISGUISE_COOLDOWN_TICKS = 45;
 const SPY_CHECK_INTERVAL_TICKS = 120;
 const MAX_SPY_ATTEMPTS = 4;
 /** Keep requesting spies this long after an infiltrate order (spy is unspawned on success). */
@@ -40,7 +41,8 @@ const HIGH_VALUE_SPY_TARGETS = new Set([
 enum SpyMissionState {
     Preparing = 0,
     Hunting = 1,
-    Infiltrating = 2,
+    Disguising = 2,
+    Infiltrating = 3,
 }
 
 const LOST_SPY = "lost_spy";
@@ -54,6 +56,8 @@ const SUCCESS = "success";
 export class SpyMission extends Mission {
     private state = SpyMissionState.Preparing;
     private lastInfiltrateAttemptTick = -1;
+    private lastDisguiseAttemptTick = -1;
+    private disguiseTargetId: number | null = null;
     private infiltrateOrderedAt = -1;
 
     constructor(
@@ -129,9 +133,30 @@ export class SpyMission extends Mission {
             if (!spy) {
                 return requestUnitsWithSamePriority(["SPY"], this.priority);
             }
+
+            const infiltrateOwner = target.owner;
+            if (!isDisguisedAsEnemy(spy, infiltrateOwner)) {
+                if (
+                    game.getCurrentTick() >
+                    this.lastDisguiseAttemptTick + DISGUISE_COOLDOWN_TICKS
+                ) {
+                    const disguiseTargetId =
+                        this.disguiseTargetId ?? pickDisguiseTarget(game, playerData.name, spy, target);
+                    if (disguiseTargetId != null) {
+                        this.disguiseTargetId = disguiseTargetId;
+                        this.state = SpyMissionState.Disguising;
+                        actionsApi.orderUnits([spy.id], OrderType.ForceAttack, disguiseTargetId);
+                        this.lastDisguiseAttemptTick = game.getCurrentTick();
+                        this.logger(`Spy ${spy.id} disguising as unit ${disguiseTargetId}`);
+                        return noop();
+                    }
+                }
+            }
+
             if (!canReachStructure(game, spy, target)) {
                 // Try another building instead of permanently blacklisting via NO_PATH on first failure.
                 this.infiltrateTargetId = null;
+                this.disguiseTargetId = null;
                 this.state = SpyMissionState.Hunting;
                 return noop();
             }
@@ -139,6 +164,23 @@ export class SpyMission extends Mission {
             this.lastInfiltrateAttemptTick = game.getCurrentTick();
             this.infiltrateOrderedAt = game.getCurrentTick();
             this.logger(`Spy ${spy.id} infiltrating building ${this.infiltrateTargetId}`);
+        }
+
+        if (
+            this.state === SpyMissionState.Disguising &&
+            game.getCurrentTick() > this.lastDisguiseAttemptTick + DISGUISE_COOLDOWN_TICKS
+        ) {
+            const spy = spies[0];
+            if (spy && this.infiltrateTargetId != null) {
+                const infiltrateTarget = game.getGameObjectData(this.infiltrateTargetId);
+                if (infiltrateTarget && isDisguisedAsEnemy(spy, infiltrateTarget.owner)) {
+                    this.state = SpyMissionState.Infiltrating;
+                    this.disguiseTargetId = null;
+                } else {
+                    this.disguiseTargetId = null;
+                    this.state = SpyMissionState.Infiltrating;
+                }
+            }
         }
         return noop();
     }
@@ -150,6 +192,59 @@ export class SpyMission extends Mission {
     public getPriority() {
         return this.priority;
     }
+}
+
+function isDisguisedAsEnemy(spy: UnitData, enemyOwnerName: string | undefined): boolean {
+    if (!enemyOwnerName || !spy.disguiseUnitName) {
+        return false;
+    }
+    return spy.disguiseOwnerName === enemyOwnerName;
+}
+
+/** Enemy infantry to mimic via MakeupKit (ForceAttack) before infiltration. */
+const DISGUISE_INFANTRY_NAMES = new Set([
+    "E1",
+    "E2",
+    "GHOST",
+    "YURI",
+    "JUMPJET",
+    "ENGINEER",
+    "SENGINEER",
+    "GGI",
+    "CLEG",
+    "FLAKT",
+]);
+
+function pickDisguiseTarget(
+    game: GameApi,
+    playerName: string,
+    spy: UnitData,
+    infiltrateTarget: GameObjectData,
+): number | null {
+    const enemyOwner = infiltrateTarget.owner;
+    if (!enemyOwner) {
+        return null;
+    }
+
+    const candidates = game
+        .getVisibleUnits(playerName, "enemy", (r) => DISGUISE_INFANTRY_NAMES.has(r.name))
+        .map((unitId) => game.getUnitData(unitId))
+        .filter((unit): unit is UnitData => !!unit && unit.owner === enemyOwner);
+
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    const targetCenter = toVector2(infiltrateTarget.tile);
+    candidates.sort((a, b) => {
+        const distA = toVector2(a.tile).distanceTo(targetCenter);
+        const distB = toVector2(b.tile).distanceTo(targetCenter);
+        const spyDistA = toVector2(spy.tile).distanceTo(toVector2(a.tile));
+        const spyDistB = toVector2(spy.tile).distanceTo(toVector2(b.tile));
+        return distA + spyDistA * 0.35 - (distB + spyDistB * 0.35);
+    });
+
+    return candidates[0].id;
 }
 
 function pickBestSpyTarget(game: GameApi, playerName: string): number | null {

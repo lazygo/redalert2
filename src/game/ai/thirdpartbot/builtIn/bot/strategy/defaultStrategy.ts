@@ -5,6 +5,7 @@ import { AttackMissionFactory } from "../logic/mission/missions/attackMission";
 import { DefenceMissionFactory } from "../logic/mission/missions/defenceMission";
 import { EngineerMissionFactory } from "../logic/mission/missions/engineerMission";
 import { BaseGuardMissionFactory } from "../logic/mission/missions/baseGuardMission";
+import { DogPatrolMissionFactory } from "../logic/mission/missions/dogPatrolMission";
 import { McvReserveMissionFactory } from "../logic/mission/missions/mcvReserveMissionFactory";
 import { SpyMissionFactory } from "../logic/mission/missions/spyMission";
 import { SupabotContext } from "../logic/common/context";
@@ -234,6 +235,7 @@ export class DefaultStrategy implements Strategy {
     private defenceFactory = new DefenceMissionFactory();
     private engineerFactory = new EngineerMissionFactory();
     private baseGuardFactory = new BaseGuardMissionFactory();
+    private dogPatrolFactory = new DogPatrolMissionFactory();
     private mcvReserveFactory: McvReserveMissionFactory;
     private spyFactory = new SpyMissionFactory();
     private wavePlanner = new AttackWavePlanner();
@@ -275,6 +277,7 @@ export class DefaultStrategy implements Strategy {
 
         this.defenceFactory.maybeCreateMissions(context, missionController, logger);
         this.baseGuardFactory.maybeCreateMissions(context, missionController, logger);
+        this.dogPatrolFactory.maybeCreateMissions(context, missionController, logger);
         this.engineerFactory.maybeCreateMissions(context, missionController, logger);
         this.spyFactory.maybeCreateMissions(context, missionController, logger);
 

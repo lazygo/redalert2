@@ -1,24 +1,103 @@
 import { OrderType, SideType, UnitData, Vector2 } from "../../../../game-api";
 import { MissionContext, SupabotContext } from "../../common/context";
+import { numBuildingsOwnedOfName } from "../../building/buildingRules";
 import { DebugLogger, isOwnedByNeutral } from "../../common/utils";
 import { BatchableAction } from "../actionBatcher";
-import { Mission, MissionAction, grabCombatants, noop, requestUnitsWithSamePriority } from "../mission";
+import { Mission, MissionAction, grabCombatants, requestUnitsWithSamePriority } from "../mission";
 import { MissionController } from "../missionController";
-import { getAttackWeight, manageAttackMicro, manageMoveMicro } from "./squads/common";
+import { getAttackWeight, manageAttackMicro } from "./squads/common";
 
 const GUARD_ORDER_INTERVAL_TICKS = 45;
 const ENEMY_SCAN_RADIUS = 14;
 const GRAB_RADIUS = 11;
-const BASE_GUARD_PRIORITY = 52;
+/** Retention priority — assigned garrison units resist reassignment to lower-priority missions. */
+const BASE_GUARD_HOLD_PRIORITY = 58;
+/** Production priority — must stay below attack missions so assault/harass waves get units. */
+const BASE_GUARD_FILL_PRIORITY = 22;
 
-/** Per-side garrison quotas for one guard post. */
-function getGuardComposition(side: SideType): Record<string, number> {
+/** ~25s before the first guard post appears — economy & attacks go first. */
+const MIN_TICKS_BEFORE_GUARDS = 15 * 25;
+/** ~40s between unlocking additional guard posts. */
+const GUARD_POST_UNLOCK_INTERVAL_TICKS = 15 * 40;
+
+const BARRACKS_NAMES = ["GAPILE", "NAHAND"];
+const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
+
+/** Post index allowed to request barracks/warfactory production this tick (set by factory). */
+let designatedFillPostIndex = -1;
+
+/** Per-side full garrison quotas for one guard post. */
+function getFullGuardComposition(side: SideType): Record<string, number> {
     switch (side) {
         case SideType.Nod:
             return { E2: 2, DOG: 1, HTNK: 1 };
         case SideType.GDI:
         default:
             return { E1: 2, ADOG: 1, MTNK: 1 };
+    }
+}
+
+function hasBarracks(context: MissionContext): boolean {
+    const playerData = context.game.getPlayerData(context.player.name);
+    return BARRACKS_NAMES.some((name) => numBuildingsOwnedOfName(context.game, playerData, name) > 0);
+}
+
+function hasWarFactory(context: MissionContext): boolean {
+    const playerData = context.game.getPlayerData(context.player.name);
+    return WAR_FACTORY_NAMES.some((name) => numBuildingsOwnedOfName(context.game, playerData, name) > 0);
+}
+
+/**
+ * Garrison strength ramps with game time and available structures.
+ * Infantry → more infantry → dog → tank.
+ */
+function getProgressiveGuardComposition(context: MissionContext, side: SideType): Record<string, number> {
+    const tick = context.game.getCurrentTick();
+    const infantry = side === SideType.Nod ? "E2" : "E1";
+    const dog = side === SideType.Nod ? "DOG" : "ADOG";
+
+    if (!hasBarracks(context)) {
+        return {};
+    }
+
+    let tier = 0;
+    if (tick >= MIN_TICKS_BEFORE_GUARDS + 15 * 20) {
+        tier = 1;
+    }
+    if (tick >= MIN_TICKS_BEFORE_GUARDS + 15 * 50) {
+        tier = 2;
+    }
+    if (tick >= MIN_TICKS_BEFORE_GUARDS + 15 * 90 && hasWarFactory(context)) {
+        tier = 3;
+    }
+
+    switch (tier) {
+        case 0:
+            return { [infantry]: 1 };
+        case 1:
+            return { [infantry]: 2 };
+        case 2:
+            return { [infantry]: 2, [dog]: 1 };
+        default:
+            return getFullGuardComposition(side);
+    }
+}
+
+function getGuardPosts(missionController: MissionController): BaseGuardMission[] {
+    return missionController
+        .getMissions()
+        .filter((mission): mission is BaseGuardMission => mission instanceof BaseGuardMission)
+        .sort((a, b) => a.getPostIndex() - b.getPostIndex());
+}
+
+/** Pick the earliest post that still needs trained units — only it may pull factory output. */
+export function refreshGuardFillSlot(missionController: MissionController, context: SupabotContext): void {
+    designatedFillPostIndex = -1;
+    for (const post of getGuardPosts(missionController)) {
+        if (post.needsProductionFill(context)) {
+            designatedFillPostIndex = post.getPostIndex();
+            break;
+        }
     }
 }
 
@@ -32,22 +111,51 @@ export class BaseGuardMission extends Mission {
     constructor(
         uniqueName: string,
         private guardPoint: Vector2,
-        private composition: Record<string, number>,
+        private postIndex: number,
+        private createdAtTick: number,
         logger: DebugLogger,
     ) {
         super(uniqueName, logger);
     }
 
+    getPostIndex(): number {
+        return this.postIndex;
+    }
+
+    getCreatedAtTick(): number {
+        return this.createdAtTick;
+    }
+
+    getTargetComposition(context: MissionContext): Record<string, number> {
+        const side = context.game.getPlayerData(context.player.name).country?.side;
+        if (side === undefined) {
+            return {};
+        }
+        return getProgressiveGuardComposition(context, side);
+    }
+
+    needsProductionFill(context: SupabotContext | MissionContext): boolean {
+        const target = this.getTargetComposition(context as MissionContext);
+        if (Object.keys(target).length === 0) {
+            return false;
+        }
+        return this.getMissingUnits(context.game, target).length > 0;
+    }
+
     _onAiUpdate(context: MissionContext): MissionAction {
         const { game, actionBatcher } = context;
         const tick = game.getCurrentTick();
+        const targetComposition = this.getTargetComposition(context);
 
-        const missing = this.getMissingUnits(game, this.composition);
-        if (missing.length > 0) {
-            return requestUnitsWithSamePriority(
-                missing.map(([unitName]) => unitName),
-                BASE_GUARD_PRIORITY,
-            );
+        const missing = this.getMissingUnits(game, targetComposition);
+        if (
+            missing.length > 0 &&
+            this.postIndex === designatedFillPostIndex &&
+            Object.keys(targetComposition).length > 0
+        ) {
+            // One unit type at a time so garrison never floods the production queue.
+            const [unitName] = missing[0];
+            return requestUnitsWithSamePriority([unitName], BASE_GUARD_FILL_PRIORITY);
         }
 
         const grabAction = grabCombatants(this.guardPoint, GRAB_RADIUS);
@@ -92,11 +200,11 @@ export class BaseGuardMission extends Mission {
     }
 
     getGlobalDebugText(): string | undefined {
-        return `guard@${this.guardPoint.x},${this.guardPoint.y}`;
+        return `guard#${this.postIndex}@${this.guardPoint.x},${this.guardPoint.y}`;
     }
 
     getPriority() {
-        return BASE_GUARD_PRIORITY;
+        return BASE_GUARD_HOLD_PRIORITY;
     }
 }
 
@@ -109,9 +217,31 @@ const GUARD_POST_OFFSETS = [
     { dx: -6, dy: -6, label: "nw" },
 ];
 
-export class BaseGuardMissionFactory {
-    private initialized = false;
+function shouldUnlockNextPost(context: SupabotContext, existing: BaseGuardMission[]): boolean {
+    const tick = context.game.getCurrentTick();
+    if (tick < MIN_TICKS_BEFORE_GUARDS) {
+        return false;
+    }
+    if (existing.length === 0) {
+        return hasBarracks(context as MissionContext);
+    }
+    if (existing.length >= GUARD_POST_OFFSETS.length) {
+        return false;
+    }
 
+    const lastPost = existing[existing.length - 1];
+    if (tick < lastPost.getCreatedAtTick() + GUARD_POST_UNLOCK_INTERVAL_TICKS) {
+        return false;
+    }
+
+    // Previous post needs at least one guard, or its current-tier quota is already met.
+    if (lastPost.getUnitIds().length > 0) {
+        return true;
+    }
+    return !lastPost.needsProductionFill(context);
+}
+
+export class BaseGuardMissionFactory {
     getName(): string {
         return "BaseGuardMissionFactory";
     }
@@ -120,7 +250,11 @@ export class BaseGuardMissionFactory {
         if (!context.botProfile?.fortifyBase) {
             return;
         }
-        if (this.initialized) {
+
+        refreshGuardFillSlot(missionController, context);
+
+        const existing = getGuardPosts(missionController);
+        if (!shouldUnlockNextPost(context, existing)) {
             return;
         }
 
@@ -131,17 +265,13 @@ export class BaseGuardMissionFactory {
             return;
         }
 
-        const composition = getGuardComposition(side);
-        const start = playerData.startLocation;
+        const postIndex = existing.length;
+        const offset = GUARD_POST_OFFSETS[postIndex];
+        const guardPoint = new Vector2(playerData.startLocation.x + offset.dx, playerData.startLocation.y + offset.dy);
 
-        for (const offset of GUARD_POST_OFFSETS) {
-            const guardPoint = new Vector2(start.x + offset.dx, start.y + offset.dy);
-            missionController.addMission(
-                new BaseGuardMission(`base-guard-${offset.label}`, guardPoint, composition, logger),
-            );
-        }
-
-        this.initialized = true;
-        logger("Created permanent base guard posts for Savage AI");
+        missionController.addMission(
+            new BaseGuardMission(`base-guard-${offset.label}`, guardPoint, postIndex, game.getCurrentTick(), logger),
+        );
+        logger(`Unlocked base guard post ${offset.label} (${postIndex + 1}/${GUARD_POST_OFFSETS.length})`);
     }
 }
