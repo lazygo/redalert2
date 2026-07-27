@@ -21,6 +21,7 @@ import {
 } from "../BotDifficultyProfile";
 import type { GlobalThreat } from "../logic/threat/threat";
 import { AttackWaveKind, AttackWavePlanner } from "./attackWavePlanner";
+import { HarvesterHarassMissionFactory } from "../logic/mission/missions/harvesterHarassMission";
 import { StrategicFocusPlanner } from "./strategicFocusPlanner";
 
 const DEFAULT_COMPOSITIONS: Compositions = {
@@ -236,6 +237,7 @@ export class DefaultStrategy implements Strategy {
     private engineerFactory = new EngineerMissionFactory();
     private baseGuardFactory = new BaseGuardMissionFactory();
     private dogPatrolFactory = new DogPatrolMissionFactory();
+    private harvesterHarassFactory = new HarvesterHarassMissionFactory();
     private mcvReserveFactory: McvReserveMissionFactory;
     private spyFactory = new SpyMissionFactory();
     private wavePlanner = new AttackWavePlanner();
@@ -270,6 +272,8 @@ export class DefaultStrategy implements Strategy {
         this.expansionFactory.maybeCreateMissions(context, missionController, logger);
         this.mcvReserveFactory.maybeCreateMissions(context, missionController, logger);
         this.scoutingFactory.maybeCreateMissions(context, missionController, logger);
+        this.engineerFactory.maybeCreateMissions(context, missionController, logger);
+        this.harvesterHarassFactory.maybeCreateMissions(context, missionController, logger);
 
         this.attackFactory.maybeCreateMissions(context, missionController, logger, (wave) =>
             this.selectAttackComposition(context, logger, wave),
@@ -278,7 +282,6 @@ export class DefaultStrategy implements Strategy {
         this.defenceFactory.maybeCreateMissions(context, missionController, logger);
         this.baseGuardFactory.maybeCreateMissions(context, missionController, logger);
         this.dogPatrolFactory.maybeCreateMissions(context, missionController, logger);
-        this.engineerFactory.maybeCreateMissions(context, missionController, logger);
         this.spyFactory.maybeCreateMissions(context, missionController, logger);
 
         return this;

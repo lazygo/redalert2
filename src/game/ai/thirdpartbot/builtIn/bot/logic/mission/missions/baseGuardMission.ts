@@ -3,15 +3,15 @@ import { MissionContext, SupabotContext } from "../../common/context";
 import { numBuildingsOwnedOfName } from "../../building/buildingRules";
 import { DebugLogger, isOwnedByNeutral } from "../../common/utils";
 import { BatchableAction } from "../actionBatcher";
-import { Mission, MissionAction, grabCombatants, requestUnitsWithSamePriority } from "../mission";
+import { Mission, MissionAction, grabCombatants, noop, requestUnitsWithSamePriority } from "../mission";
 import { MissionController } from "../missionController";
 import { getAttackWeight, manageAttackMicro } from "./squads/common";
 
 const GUARD_ORDER_INTERVAL_TICKS = 45;
 const ENEMY_SCAN_RADIUS = 14;
 const GRAB_RADIUS = 11;
-/** Retention priority — assigned garrison units resist reassignment to lower-priority missions. */
-const BASE_GUARD_HOLD_PRIORITY = 58;
+/** Retention priority — below assault prep max (54) so forming attack waves keep their units. */
+const BASE_GUARD_HOLD_PRIORITY = 48;
 /** Production priority — must stay below attack missions so assault/harass waves get units. */
 const BASE_GUARD_FILL_PRIORITY = 22;
 
@@ -158,14 +158,18 @@ export class BaseGuardMission extends Mission {
             return requestUnitsWithSamePriority([unitName], BASE_GUARD_FILL_PRIORITY);
         }
 
-        const grabAction = grabCombatants(this.guardPoint, GRAB_RADIUS);
+        // Only pull idle units when the post still needs bodies — never strip a forming attack wave.
+        const grabAction =
+            missing.length > 0 && this.getUnitIds().length < Object.values(targetComposition).reduce((a, b) => a + b, 0)
+                ? grabCombatants(this.guardPoint, GRAB_RADIUS)
+                : noop();
 
         if (this.getUnitIds().length === 0) {
-            return grabAction;
+            return missing.length > 0 ? grabAction : noop();
         }
 
         if (tick < this.lastOrderTick + GUARD_ORDER_INTERVAL_TICKS) {
-            return grabAction;
+            return noop();
         }
         this.lastOrderTick = tick;
 
@@ -196,7 +200,7 @@ export class BaseGuardMission extends Mission {
             }
         }
 
-        return grabAction;
+        return noop();
     }
 
     getGlobalDebugText(): string | undefined {

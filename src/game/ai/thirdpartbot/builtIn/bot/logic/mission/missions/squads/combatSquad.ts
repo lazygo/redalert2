@@ -53,6 +53,7 @@ export class CombatSquad implements Squad {
         private rallyArea: Vector2,
         private targetArea: Vector2,
         private radius: number,
+        private compactRally: boolean = false,
     ) {}
 
     public getGlobalDebugText(): string | undefined {
@@ -87,7 +88,9 @@ export class CombatSquad implements Squad {
             );
 
             if (this.state === SquadState.Gathering) {
-                const requiredGatherRadius = GameMath.sqrt(groundUnitIds.length) * GATHER_RATIO + MIN_GATHER_RADIUS;
+                const gatherRatio = this.compactRally ? 4 : GATHER_RATIO;
+                const minGatherRadius = this.compactRally ? 3 : MIN_GATHER_RADIUS;
+                const requiredGatherRadius = GameMath.sqrt(groundUnitIds.length) * gatherRatio + minGatherRadius;
                 if (
                     centerOfMass &&
                     maxDistance &&
