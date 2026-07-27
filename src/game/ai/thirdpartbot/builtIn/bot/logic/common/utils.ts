@@ -12,6 +12,18 @@ export enum Countries {
     RUSSIA = "Russians",
 }
 
+/** Gonghui China uses Confederation country + CA* tech tree (not Soviet NA*). */
+export function isChinaFaction(playerData: { country?: { id?: string; name?: string } | null }): boolean {
+    const id = playerData.country?.id;
+    const name = playerData.country?.name;
+    return (
+        id === Countries.CUBA ||
+        name === Countries.CUBA ||
+        name === "Latin Confederation" ||
+        name === "China"
+    );
+}
+
 export type DebugLogger = (message: string, sayInGame?: boolean) => void;
 
 export const isOwnedByNeutral = (unitData: UnitData | undefined) => unitData?.owner === "@@NEUTRAL@@";

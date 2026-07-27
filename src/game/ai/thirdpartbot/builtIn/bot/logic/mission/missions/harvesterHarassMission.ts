@@ -1,5 +1,5 @@
 import { GameApi, PlayerData, SideType, UnitData, Vector2 } from "../../../../game-api";
-import { DebugLogger } from "../../common/utils";
+import { DebugLogger, isChinaFaction } from "../../common/utils";
 import { MissionContext, SupabotContext } from "../../common/context";
 import { isBrutalOrSavageProfile } from "../../../BotDifficultyProfile";
 import { Mission, MissionAction, disbandMission, noop, requestUnitsWithSamePriority } from "../mission";
@@ -12,12 +12,19 @@ const ORDER_INTERVAL_TICKS = 25;
 const HARASS_HOLD_PRIORITY = 44;
 const HARASS_FILL_PRIORITY = 38;
 
-const LIGHT_HARASS_UNITS: Record<SideType, string[]> = {
-    [SideType.GDI]: ["E1", "FV", "MTNK"],
-    [SideType.Nod]: ["E2", "HTK", "HTNK"],
-    [SideType.Civilian]: [],
-    [SideType.Mutant]: []
-};
+function getLightHarassUnits(side: SideType, playerData: PlayerData): string[] {
+    if (isChinaFaction(playerData)) {
+        return ["PLA", "BGGY", "LTNK"];
+    }
+    switch (side) {
+        case SideType.GDI:
+            return ["E1", "FV", "MTNK"];
+        case SideType.Nod:
+            return ["E2", "HTK", "HTNK"];
+        default:
+            return [];
+    }
+}
 
 /**
  * Small independent raid targeting visible enemy harvesters.
@@ -57,14 +64,15 @@ export class HarvesterHarassMission extends Mission {
             .filter((unit): unit is UnitData => !!unit);
 
         if (units.length === 0) {
-            const side = context.game.getPlayerData(context.player.name).country?.side;
+            const playerData = context.game.getPlayerData(context.player.name);
+            const side = playerData.country?.side;
             if (side === undefined) {
                 return disbandMission("no_side");
             }
             const available = new Set(
                 context.player.production.getAvailableObjects().map((object) => object.name),
             );
-            const unitNames = LIGHT_HARASS_UNITS[side].filter((name) => available.has(name));
+            const unitNames = getLightHarassUnits(side, playerData).filter((name) => available.has(name));
             if (unitNames.length === 0) {
                 return disbandMission("no_units");
             }

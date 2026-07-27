@@ -266,9 +266,23 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["CANRCT", new NuclearReactor()],
     ["CAYARD", new NavalYardBuilding(8)],
     ["CATECH", new BasicBuilding(22, 1, 2800)],
+    ["CASPYSAT", new BasicBuilding(16, 1, 2000)],
     ["CAWALL", new AntiGroundStaticDefence(0, 0, 0, 0)],
     ["CAPILL", new AntiGroundStaticDefence(3, 2, 7.5, 8)],
     ["CTESLA", new AntiGroundStaticDefence(4, 2, 10, 6)],
     ["MSAM", new AntiAirStaticDefence(2, 2, 7.5)],
+    // China combat units (CAHAND / CAWEAP / CATECH tree — NOT Soviet NA* units).
+    ["PLA", new BasicGroundUnit(2, 2, 0.2, 0)],
+    ["LTNK", new BasicGroundUnit(10, 3, 2, 0)],
+    ["BGGY", new BasicGroundUnit(5, 2, 0.5, 1)],
+    ["HOWI", new BasicGroundUnit(6, 1, 5, 0)], // China Apocalypse
+    ["V32", new ArtilleryUnit(10, 10, 0, 4)], // China V3
+    ["SEEK", new BasicGroundUnit(6, 1, 2, 0.5)],
+    ["J10", new BasicAirUnit(8, 2, 2.5, 0)], // China Black Eagle
+    ["HOVI", new BasicGroundUnit(0, 0)], // Chrono-style — disabled like CLEG
+    ["SUB2", new BasicGroundUnit(6, 2, 2, 0)],
+    ["DEST2", new BasicGroundUnit(6, 2, 2, 0)],
+    ["MBOAT", new ArtilleryUnit(8, 2, 0, 4)],
+    ["CARRIER2", new BasicAirUnit(8, 1, 3, 1)],
     ["CMCV", new BasicGroundUnit(0, 0)], // Mobile construction — produced via McvReserve, not attack
 ]);

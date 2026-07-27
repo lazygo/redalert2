@@ -172,10 +172,67 @@ const DEFAULT_COMPOSITIONS: Compositions = {
         minimumUnits: 2,
         maximumUnits: 8,
     },
+    // China (Confederation) — CAHAND/CAWEAP/CATECH tree. Soviet E2/HTNK require NA* factories
+    // and are unavailable, so without these the China AI never requests an army.
+    chinaInfantry: {
+        composition: { PLA: 1 },
+        minimumUnits: 3,
+        maximumUnits: 12,
+    },
+    chinaTanks: {
+        composition: { LTNK: 5, BGGY: 1 },
+        minimumUnits: 2,
+        maximumUnits: 20,
+    },
+    chinaHeavyTanks: {
+        composition: { HOWI: 2, LTNK: 1 },
+        minimumUnits: 2,
+        maximumUnits: 10,
+    },
+    chinaArtillery: {
+        composition: { V32: 3, LTNK: 1 },
+        minimumUnits: 3,
+        maximumUnits: 12,
+    },
+    chinaAntiAir: {
+        composition: { BGGY: 4, PLA: 2 },
+        minimumUnits: 3,
+        maximumUnits: 12,
+    },
+    chinaAirAssault: {
+        composition: { J10: 2, BGGY: 2 },
+        minimumUnits: 2,
+        maximumUnits: 10,
+    },
+    chinaBlackEagles: {
+        composition: { J10: 2 },
+        minimumUnits: 2,
+        maximumUnits: 8,
+    },
+    chinaNavy: {
+        composition: { SUB2: 4 },
+        minimumUnits: 2,
+        maximumUnits: 8,
+    },
+    chinaNavyEscort: {
+        composition: { DEST2: 3, SUB2: 2 },
+        minimumUnits: 3,
+        maximumUnits: 10,
+    },
+    chinaNavyHeavy: {
+        composition: { MBOAT: 2, DEST2: 2 },
+        minimumUnits: 3,
+        maximumUnits: 8,
+    },
+    chinaCarrier: {
+        composition: { CARRIER2: 1, DEST2: 2 },
+        minimumUnits: 3,
+        maximumUnits: 8,
+    },
 };
 
 /** Prefer these when enemy air threat dominates. */
-const ANTI_AIR_COMPOSITIONS = new Set(["sovietAntiAir", "alliedAntiAir", "rocketeers"]);
+const ANTI_AIR_COMPOSITIONS = new Set(["sovietAntiAir", "alliedAntiAir", "rocketeers", "chinaAntiAir"]);
 /** Prefer these when enemy ground threat dominates. */
 const ANTI_GROUND_COMPOSITIONS = new Set([
     "sovietTanks",
@@ -184,6 +241,9 @@ const ANTI_GROUND_COMPOSITIONS = new Set([
     "heavyAlliedTanks",
     "sovietArtillery",
     "alliedArtillery",
+    "chinaTanks",
+    "chinaHeavyTanks",
+    "chinaArtillery",
 ]);
 const AIR_ASSAULT_COMPOSITIONS = new Set([
     "kirovs",
@@ -191,17 +251,22 @@ const AIR_ASSAULT_COMPOSITIONS = new Set([
     "alliedAirAssault",
     "rocketeers",
     "blackEagles",
+    "chinaAirAssault",
+    "chinaBlackEagles",
 ]);
-const BASIC_NAVY_COMPOSITIONS = new Set(["sovietNavy", "alliedNavy"]);
+const BASIC_NAVY_COMPOSITIONS = new Set(["sovietNavy", "alliedNavy", "chinaNavy"]);
 const ADVANCED_NAVY_COMPOSITIONS = new Set([
     "sovietNavyEscort",
     "alliedNavyEscort",
     "sovietNavyHeavy",
     "alliedNavyHeavy",
     "alliedNavyDolphins",
+    "chinaNavyEscort",
+    "chinaNavyHeavy",
+    "chinaCarrier",
 ]);
-const NAVY_AA_ESCORT_COMPOSITIONS = new Set(["sovietNavyEscort", "alliedNavyEscort"]);
-const NAVY_HEAVY_COMPOSITIONS = new Set(["sovietNavyHeavy", "alliedNavyHeavy"]);
+const NAVY_AA_ESCORT_COMPOSITIONS = new Set(["sovietNavyEscort", "alliedNavyEscort", "chinaNavyEscort"]);
+const NAVY_HEAVY_COMPOSITIONS = new Set(["sovietNavyHeavy", "alliedNavyHeavy", "chinaNavyHeavy", "chinaCarrier"]);
 const NAVY_COMPOSITIONS = new Set([...BASIC_NAVY_COMPOSITIONS, ...ADVANCED_NAVY_COMPOSITIONS]);
 const SPECIALIST_COMPOSITIONS = new Set([
     "tanyaRaid",
@@ -212,7 +277,7 @@ const SPECIALIST_COMPOSITIONS = new Set([
     "desolatorPush",
 ]);
 /** Small elite / air raids — do not apply mass-wave minimums. */
-const SMALL_WAVE_COMPOSITIONS = new Set([...SPECIALIST_COMPOSITIONS, "kirovs", "blackEagles"]);
+const SMALL_WAVE_COMPOSITIONS = new Set([...SPECIALIST_COMPOSITIONS, "kirovs", "blackEagles", "chinaBlackEagles"]);
 /** Compositions suited to fast, small harassment raids. */
 const HARASS_COMPOSITIONS = new Set([
     "conscripts",
@@ -227,8 +292,13 @@ const HARASS_COMPOSITIONS = new Set([
     "blackEagles",
     "sovietNavy",
     "alliedNavy",
+    "chinaInfantry",
+    "chinaTanks",
+    "chinaAirAssault",
+    "chinaBlackEagles",
+    "chinaNavy",
 ]);
-const ARTILLERY_COMPOSITIONS = new Set(["sovietArtillery", "alliedArtillery"]);
+const ARTILLERY_COMPOSITIONS = new Set(["sovietArtillery", "alliedArtillery", "chinaArtillery"]);
 
 export class DefaultStrategy implements Strategy {
     private expansionFactory: ExpansionMissionFactory;
@@ -426,7 +496,7 @@ export class DefaultStrategy implements Strategy {
                 if (HARASS_COMPOSITIONS.has(id)) {
                     score += 5;
                 }
-                if (id === "conscripts" || id === "gis" || id === "rocketeers") {
+                if (id === "conscripts" || id === "gis" || id === "rocketeers" || id === "chinaInfantry") {
                     score += 3;
                 }
                 if (SPECIALIST_COMPOSITIONS.has(id)) {

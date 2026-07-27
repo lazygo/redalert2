@@ -44,6 +44,7 @@ const SAVAGE_STRUCTURE_TARGETS: Record<string, SavageStructureTarget> = {
     NATECH: { min: 1, priority: 30 },
     CATECH: { min: 1, priority: 30 },
     GASPYSAT: { min: 1, priority: 22 },
+    CASPYSAT: { min: 1, priority: 22 },
     GAGAP: { min: 2, max: 3, priority: 14, sustainPriority: 8 },
     NAPSIS: { min: 1, priority: 18 },
 
@@ -229,6 +230,13 @@ export function applySavageStructurePriority(
     }
 
     if (owned >= target.min) {
+        // Enough power buffer — stop sustaining extra plants so tech/army can spend.
+        if (POWER_PLANT_NAMES.has(buildingName) && playerData.power.drain > 0) {
+            const surplusRatio = playerData.power.total / playerData.power.drain;
+            if (surplusRatio >= 1.25) {
+                return basePriority;
+            }
+        }
         const sustain = target.sustainPriority ?? Math.floor(target.priority / 2);
         const progress = (owned - target.min) / Math.max(1, maxCount - target.min);
         const sustainPriority = sustain * (1 - progress);
