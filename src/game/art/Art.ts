@@ -8,6 +8,7 @@ export class Art {
     private mapFile: any;
     private logger: any;
     private objectArt: Map<any, Map<string, ObjectArt>>;
+    private missingArtLogged = new Set<string>();
     constructor(rules: any, artIni: any, mapFile: any, logger: any) {
         this.rules = rules;
         this.artIni = artIni;
@@ -27,7 +28,11 @@ export class Art {
         if (art) {
             return art;
         }
-        this.logger?.debug(`Missing art for object "${name}"`);
+        // Mods often omit muzzle/explosion art — log once at debug, never spam console.
+        if (!this.missingArtLogged.has(name)) {
+            this.missingArtLogged.add(name);
+            this.logger?.debug?.(`Missing art for object "${name}"`);
+        }
         return new ObjectArt(type, this.rules.hasObject(name, type)
             ? this.rules.getObject(name, type)
             : new ObjectRules(type, new IniSection(name)), new IniSection(name));
