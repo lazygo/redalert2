@@ -3,12 +3,16 @@ import { numBuildingsOwnedOfName } from "../../building/buildingRules";
 import { Mission, MissionAction, noop, requestUnitsWithSamePriority } from "../mission";
 import { MissionContext } from "../../common/context";
 import { DebugLogger } from "../../common/utils";
+import type { StrategicFocusPlanner } from "../../../strategy/strategicFocusPlanner";
 
 const REPAIR_DEPOT_NAMES = ["GADEPT", "NADEPT"];
 const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
 
 export const MCV_UNIT_NAMES = ["AMCV", "SMCV"] as const;
-const ABSOLUTE_MAX_MOBILE_MCVS = 3;
+const ABSOLUTE_MAX_MOBILE_MCVS = 2;
+
+/** Low priority — combat units and attacks must win the war factory queue. */
+const MCV_RESERVE_PRIORITY = 10;
 
 export function hasRepairDepot(game: GameApi, playerData: PlayerData): boolean {
     return REPAIR_DEPOT_NAMES.some((name) => numBuildingsOwnedOfName(game, playerData, name) > 0);
@@ -29,19 +33,21 @@ export function countConyards(game: GameApi, playerName: string): number {
 }
 
 /**
- * How many undeployed MCVs Savage AI should keep in reserve.
- * - Needs war factory + repair depot (MCV prerequisites).
- * - 1 spare with one base; +1 per extra conyard (expansion), capped at 3.
+ * Spare MCV target — only during an active expand window, not permanently at 1 per base.
  */
-export function getDesiredMobileMcvCount(game: GameApi, playerData: PlayerData): number {
-    if (!hasWarFactory(game, playerData) || !hasRepairDepot(game, playerData)) {
+export function getDesiredMobileMcvCount(
+    game: GameApi,
+    playerData: PlayerData,
+    expansionInvesting: boolean,
+): number {
+    if (!expansionInvesting || !hasWarFactory(game, playerData) || !hasRepairDepot(game, playerData)) {
         return 0;
     }
     const conyards = countConyards(game, playerData.name);
-    if (conyards === 0) {
+    if (conyards <= 1) {
         return 1;
     }
-    return Math.min(ABSOLUTE_MAX_MOBILE_MCVS, conyards);
+    return Math.min(ABSOLUTE_MAX_MOBILE_MCVS, conyards - 1);
 }
 
 export function canProduceMcv(context: {
@@ -51,18 +57,23 @@ export function canProduceMcv(context: {
     return MCV_UNIT_NAMES.some((name) => available.has(name));
 }
 
-const MCV_RESERVE_PRIORITY = 46;
-
 /**
- * Keeps a stockpile of mobile MCVs once repair depot + war factory are online.
+ * Keeps a spare MCV only during expansion windows, after a minimum army exists.
  */
 export class McvReserveMission extends Mission {
-    constructor(logger: DebugLogger) {
+    constructor(
+        logger: DebugLogger,
+        private focusPlanner: StrategicFocusPlanner,
+    ) {
         super("mcv-reserve", logger);
     }
 
     _onAiUpdate(context: MissionContext): MissionAction {
         if (!context.botProfile?.fortifyBase) {
+            return noop();
+        }
+
+        if (!this.focusPlanner.shouldInvestInExpansion(context)) {
             return noop();
         }
 
@@ -76,7 +87,7 @@ export class McvReserveMission extends Mission {
             return noop();
         }
 
-        const desired = getDesiredMobileMcvCount(game, playerData);
+        const desired = getDesiredMobileMcvCount(game, playerData, true);
         const owned = countMobileMcvs(game, context.player.name);
         if (owned >= desired) {
             return noop();

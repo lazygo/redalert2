@@ -10,6 +10,7 @@ import { MissionContext, SupabotContext } from "../../common/context";
 import { UnitComposition } from "../../../strategy/strategy";
 import { SideComposition } from "../../../strategy/compositionUtils";
 import { AttackWaveKind, AttackWavePlanner } from "../../../strategy/attackWavePlanner";
+import type { StrategicFocusPlanner } from "../../../strategy/strategicFocusPlanner";
 
 export enum AttackFailReason {
     NoTargets = "NoTargets",
@@ -266,7 +267,7 @@ const DEFAULT_VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS = 60;
 // Number of ticks between attacking "bases" (enemy starting locations).
 const DEFAULT_BASE_ATTACK_COOLDOWN_TICKS = 600;
 
-const ATTACK_MISSION_INITIAL_PRIORITY = 1;
+const ATTACK_MISSION_INITIAL_PRIORITY = 28;
 
 export class AttackMissionFactory {
     constructor(
@@ -275,6 +276,7 @@ export class AttackMissionFactory {
         private baseAttackCooldownTicks: number = DEFAULT_BASE_ATTACK_COOLDOWN_TICKS,
         private maxPreparingAttacks: number = 2,
         private wavePlanner?: AttackWavePlanner,
+        private focusPlanner?: StrategicFocusPlanner,
     ) {}
 
     getName(): string {
@@ -373,6 +375,9 @@ export class AttackMissionFactory {
                 if (profile?.alternateAttackWaves) {
                     this.wavePlanner?.recordLaunch(wave);
                 }
+                if (profile?.alternateAttackWaves || profile?.fortifyBase) {
+                    this.focusPlanner?.onAttackFinished(context);
+                }
                 missionController.addMission(
                     new RetreatMission(
                         "retreat-from-" + squadName + game.getCurrentTick(),
@@ -385,6 +390,9 @@ export class AttackMissionFactory {
         );
         if (tryAttack) {
             this.lastAttackAt = game.getCurrentTick();
+            if (profile?.alternateAttackWaves || profile?.fortifyBase) {
+                this.focusPlanner?.onAttackLaunched(context);
+            }
             logger(`Launched ${wave} wave: ${squadName}`);
         }
     }
