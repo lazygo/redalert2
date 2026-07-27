@@ -86,7 +86,11 @@ export class ScoutingMission extends Mission {
             }
             const targetTile = game.mapApi.getTile(this.scoutTarget.x, this.scoutTarget.y);
             if (!targetTile) {
-                throw new Error(`target tile ${this.scoutTarget.x},${this.scoutTarget.y} does not exist`);
+                this.logger(
+                    `Scout target ${this.scoutTarget.x},${this.scoutTarget.y} is off-map, skipping`,
+                );
+                this.setScoutTarget(null, game.getCurrentTick());
+                return noop();
             }
             if (game.getCurrentTick() > this.lastMoveCommandTick + SCOUT_MOVE_COOLDOWN_TICKS) {
                 this.lastMoveCommandTick = game.getCurrentTick();

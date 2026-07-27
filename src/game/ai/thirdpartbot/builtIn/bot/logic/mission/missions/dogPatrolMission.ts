@@ -3,7 +3,7 @@ import { numBuildingsOwnedOfName } from "../../building/buildingRules";
 import { MissionContext, SupabotContext } from "../../common/context";
 import { DebugLogger } from "../../common/utils";
 import { BatchableAction } from "../actionBatcher";
-import { Mission, MissionAction, grabCombatants, noop, requestUnitsWithSamePriority } from "../mission";
+import { Mission, MissionAction, noop, releaseUnits, requestUnitsWithSamePriority } from "../mission";
 import { MissionController } from "../missionController";
 
 const PATROL_ORDER_INTERVAL_TICKS = 40;
@@ -111,14 +111,19 @@ export class DogPatrolMission extends Mission {
             return noop();
         }
 
+        // Release combat units that were wrongly grabbed before this fix — they would sit idle forever.
+        const wronglyAssigned = this.getUnits(game).filter((unit) => unit.name !== this.dogUnitName);
+        if (wronglyAssigned.length > 0) {
+            return releaseUnits(wronglyAssigned.map((unit) => unit.id));
+        }
+
         const dogs = this.getUnitsOfTypes(game, this.dogUnitName);
         if (dogs.length === 0) {
             return requestUnitsWithSamePriority([this.dogUnitName], DOG_PATROL_FILL_PRIORITY);
         }
 
-        const grabAction = grabCombatants(this.waypoints[this.waypointIndex], 6);
         if (tick < this.lastOrderTick + PATROL_ORDER_INTERVAL_TICKS) {
-            return grabAction;
+            return noop();
         }
         this.lastOrderTick = tick;
 
@@ -131,7 +136,12 @@ export class DogPatrolMission extends Mission {
             this.waypointIndex = (this.waypointIndex + 1) % this.waypoints.length;
         }
 
-        return grabAction;
+        return noop();
+    }
+
+    /** Only lock dogs — never trap tanks/infantry in a patrol-only mission. */
+    isUnitsLocked(): boolean {
+        return false;
     }
 
     getGlobalDebugText(): string | undefined {

@@ -27,6 +27,8 @@ export enum AttackMissionState {
 
 const NO_TARGET_RETARGET_TICKS = 300;
 const NO_TARGET_IDLE_TIMEOUT_TICKS = 600;
+/** Abort a preparing wave that never launches — frees batch-attack slots. */
+const PREPARING_MAX_TICKS = 15 * 60;
 
 const ATTACK_MISSION_PRIORITY_RAMP = 1.02;
 /** Above base-guard fill (22) but below garrison hold (58) so attacks get factory output without stripping guards. */
@@ -85,6 +87,8 @@ export class AttackMission extends Mission<AttackFailReason> {
         const tick = game.getCurrentTick();
         if (this.preparingSinceTick === null) {
             this.preparingSinceTick = tick;
+        } else if (tick > this.preparingSinceTick + PREPARING_MAX_TICKS) {
+            return disbandMission(AttackFailReason.UnableToAcquireUnits);
         } else if (
             tick > this.preparingSinceTick + 120 &&
             this.getUnitIds().length < Math.ceil(this.composition.minimumUnits * 0.35)
@@ -423,6 +427,7 @@ export class AttackMissionFactory {
 
         const squadName = `${wave}_${game.getCurrentTick()}`;
         const squadDecayTicks = isHarass ? (profile?.harassSquadDecayTicks ?? 100) : (profile?.attackSquadDecayTicks ?? null);
+        const fastLaunch = isHarass || !!profile?.batchAttacks;
 
         const tryAttack = missionController.addMission(
             new AttackMission(
@@ -435,7 +440,7 @@ export class AttackMissionFactory {
                 logger,
                 squadDecayTicks,
                 isHarass,
-                isHarass,
+                fastLaunch,
             ).withOnFinish((unitIds, reason) => {
                 logger(
                     `Attack ${squadName} (${wave}, ${JSON.stringify(composition)}) with ${
