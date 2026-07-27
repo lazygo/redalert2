@@ -60,7 +60,14 @@ export class HarvesterHarassMission extends Mission {
             if (side === undefined) {
                 return disbandMission("no_side");
             }
-            return requestUnitsWithSamePriority(LIGHT_HARASS_UNITS[side], HARASS_FILL_PRIORITY);
+            const available = new Set(
+                context.player.production.getAvailableObjects().map((object) => object.name),
+            );
+            const unitNames = LIGHT_HARASS_UNITS[side].filter((name) => available.has(name));
+            if (unitNames.length === 0) {
+                return disbandMission("no_units");
+            }
+            return requestUnitsWithSamePriority(unitNames, HARASS_FILL_PRIORITY);
         }
 
         if (tick < this.lastOrderTick + ORDER_INTERVAL_TICKS) {

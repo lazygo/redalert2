@@ -155,10 +155,15 @@ export class BuiltInBot extends Bot {
 
             // Mission/strategy logic every 3 ticks.
             if (this.context.game.getCurrentTick() % 3 === 0) {
-                this.missionController.onAiUpdate(fullContext);
-                this.strategy = this.strategy.onAiUpdate(fullContext, this.missionController, (message, sayInGame) =>
-                    this.logBotStatus(message, sayInGame),
-                );
+                try {
+                    this.missionController.onAiUpdate(fullContext);
+                    this.strategy = this.strategy.onAiUpdate(fullContext, this.missionController, (message, sayInGame) =>
+                        this.logBotStatus(message, sayInGame),
+                    );
+                } catch (err) {
+                    this.logger?.error?.("BuiltIn mission/strategy update failed", err);
+                    console.error(`[BuiltInBot] "${this.name}" mission update error:`, err);
+                }
             }
 
             const unitTypeRequests = this.missionController.getRequestedUnitTypes();
