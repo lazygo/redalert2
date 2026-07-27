@@ -7,7 +7,7 @@ export enum OrderFeedbackType {
     SpecialAttack = 5,
     /** Barracks / war factory rally point (EVA, not unit voice). */
     RallyPoint = 6,
-    /** Fighter aircraft acquiring a target (EVA Select Target). */
+    /** Fighter aircraft acquiring a target (reserved; fighters use unit VoiceAttack). */
     SelectTarget = 7,
     /** Infantry entering a garrisonable structure (EVA). */
     Garrison = 8,
