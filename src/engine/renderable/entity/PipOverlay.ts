@@ -806,6 +806,49 @@ export class PipOverlay {
             this.rootObj!.visible = false;
             return;
         }
+        const selectionLevel = this.selectionModel.getSelectionLevel();
+        // Vast majority of units are unselected — skip pips/control-group/factory work.
+        if (selectionLevel === SelectionLevel.None) {
+            if (this.lastSelectionLevel !== SelectionLevel.None) {
+                this.lastSelectionLevel = SelectionLevel.None;
+                for (const element of [
+                    this.healthBar,
+                    this.selectionBox,
+                    this.pipsSprite,
+                    this.controlGroupSprite,
+                    this.primaryFactorySprite,
+                    this.rallyLine,
+                ]) {
+                    if (element) {
+                        element.visible = false;
+                    }
+                }
+            }
+            if (gameObject.healthTrait.health !== this.lastHealth) {
+                this.lastHealth = gameObject.healthTrait.health;
+                this.invalidatedElements[0] = true;
+            }
+            if (gameObject.isBuilding()) {
+                const repairState = !gameObject.autoRepairTrait?.isDisabled();
+                if (this.lastRepairState !== repairState) {
+                    this.lastRepairState = repairState;
+                    this.updateRepairWrenchSprite(repairState);
+                }
+            }
+            else if (this.lastVeteranLevel !== gameObject.veteranLevel) {
+                this.lastVeteranLevel = gameObject.veteranLevel;
+                this.updateVeteranIndicatorSprite(gameObject);
+            }
+            this.updateFlyerHelper(selectionLevel, deltaTime);
+            this.updateBehindAnim(deltaTime);
+            if (this.debugTextEnabled.value) {
+                this.updateDebugLabel();
+            }
+            this.lastOwner = gameObject.owner;
+            this.lastDebugTextEnabled = this.debugTextEnabled.value;
+            this.repairWrench?.update(deltaTime);
+            return;
+        }
         const ownerColorHex = gameObject.owner.color.asHex();
         const ownerColorChanged = this.lastOwnerColorHex !== ownerColorHex;
         if (ownerColorChanged) {
@@ -818,7 +861,6 @@ export class PipOverlay {
             this.lastHealth = gameObject.healthTrait.health;
             this.invalidatedElements[0] = true;
         }
-        const selectionLevel = this.selectionModel.getSelectionLevel();
         if (this.invalidatedElements[0] &&
             (selectionLevel >= SELECTION_LEVEL_MAP[0] || selectionLevel >= SELECTION_LEVEL_MAP[3])) {
             this.invalidatedElements[0] = undefined;

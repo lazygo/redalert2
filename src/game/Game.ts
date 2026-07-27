@@ -794,7 +794,7 @@ export class Game {
                 this.lastGameEndCheck = this.currentTime;
             }
         }
-        for (const obj of [...this.updatableObjects]) {
+        for (const obj of this.updatableObjects) {
             if (obj.isSpawned) {
                 obj.update(this);
             }

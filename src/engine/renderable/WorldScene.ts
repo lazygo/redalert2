@@ -269,6 +269,7 @@ export class WorldScene extends RenderableContainer {
         this.ambientLight.intensity = ambientIntensity * AMBIENT_LIGHT_INTENSITY;
         this.directionalLight.intensity = ambientIntensity;
     }
+    private meshBatchFrame = 0;
     update(deltaTime: number, time?: number): void {
         super.update(deltaTime);
         this._onBeforeCameraUpdate.dispatch(this, deltaTime);
@@ -300,7 +301,10 @@ export class WorldScene extends RenderableContainer {
             shadowFrustum = this.directionalLight.shadow.getFrustum();
         }
         this.meshBatchManager?.setCullingFrustums(hasViewFrustum ? this.batchViewFrustum : undefined, shadowFrustum);
-        this.meshBatchManager?.updateMeshes();
+        // Full-scene traverseVisible every frame is expensive late-game; refresh batches every other frame.
+        if ((this.meshBatchFrame++ & 1) === 0) {
+            this.meshBatchManager?.updateMeshes();
+        }
     }
     dispose(): void {
         if (this.shadowQualityListener) {

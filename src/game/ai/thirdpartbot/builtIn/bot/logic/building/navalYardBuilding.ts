@@ -5,6 +5,17 @@ import { getDefaultPlacementLocation, numBuildingsOwnedOfName } from "./building
 
 const NAVAL_YARD_NAMES = new Set(["GAYARD", "NAYARD", "CAYARD"]);
 const ABSOLUTE_MAX_NAVAL_YARDS = 3;
+/** Full placement scans are extremely expensive — refresh capacity infrequently. */
+const NAVAL_CAPACITY_CACHE_TICKS = 45;
+
+type NavalCapacityCache = {
+    playerName: string;
+    buildingName: string;
+    tick: number;
+    capacity: number;
+};
+
+let navalCapacityCache: NavalCapacityCache | null = null;
 
 /** Naval yard — placed on water; count scales with coastline capacity, not a fixed cap of 1. */
 export class NavalYardBuilding extends BasicBuilding {
@@ -38,10 +49,8 @@ export class NavalYardBuilding extends BasicBuilding {
         if (max === 0 || owned >= max) {
             return owned >= max && max > 0 ? -100 : 0;
         }
-        if (!this.getPlacementLocation(game, playerData, technoRules)) {
-            return 0;
-        }
-
+        // Do NOT call getPlacementLocation here — that re-ran full adjacency + sqrt scoring
+        // every AI tick and dominated late-game profiles (~50% of frame time).
         return this.basePriority * (1.0 - owned / max);
     }
 
@@ -78,12 +87,29 @@ export function countNavalPlacementCapacity(
     playerData: PlayerData,
     technoRules: TechnoRules,
 ): number {
+    const tick = game.getCurrentTick();
+    if (
+        navalCapacityCache &&
+        navalCapacityCache.playerName === playerData.name &&
+        navalCapacityCache.buildingName === technoRules.name &&
+        tick - navalCapacityCache.tick < NAVAL_CAPACITY_CACHE_TICKS
+    ) {
+        return navalCapacityCache.capacity;
+    }
+
     let capacity = 0;
     for (const anchor of getNavalAnchors(game, playerData)) {
         if (getDefaultPlacementLocation(game, playerData, anchor, technoRules, true, 1)) {
             capacity++;
         }
     }
+
+    navalCapacityCache = {
+        playerName: playerData.name,
+        buildingName: technoRules.name,
+        tick,
+        capacity,
+    };
     return capacity;
 }
 

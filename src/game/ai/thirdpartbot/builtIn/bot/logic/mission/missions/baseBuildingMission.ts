@@ -27,6 +27,12 @@ import { isBrutalOrSavageProfile } from "../../../BotDifficultyProfile";
 
 // Legacy mission encompassing the old "build queue" logic.
 export class BaseBuildingMission extends Mission {
+    private cachedPlacement?: {
+        name: string;
+        location: { rx: number; ry: number };
+        tick: number;
+    };
+
     constructor(
         private queueType: QueueType,
         logger: DebugLogger,
@@ -182,25 +188,35 @@ export class BaseBuildingMission extends Mission {
         objectReady: TechnoRules,
         context: MissionContext,
     ): { rx: number; ry: number } | undefined {
+        const tick = game.getCurrentTick();
+        if (
+            this.cachedPlacement &&
+            this.cachedPlacement.name === objectReady.name &&
+            tick - this.cachedPlacement.tick < 15
+        ) {
+            return this.cachedPlacement.location;
+        }
+
+        let location: { rx: number; ry: number } | undefined;
         if (BUILDING_NAME_TO_RULES.has(objectReady.name)) {
             if (isBrutalOrSavageProfile(context.botProfile) && isWallStructure(objectReady.name)) {
-                const wallLocation = getWallPlacementAroundConyards(game, playerData, objectReady);
-                if (wallLocation) {
-                    return wallLocation;
-                }
+                location = getWallPlacementAroundConyards(game, playerData, objectReady);
             }
-            if (context.botProfile?.fortifyBase && isSavageStaticDefence(objectReady.name)) {
-                const savageLocation = getSavageStaticDefencePlacement(game, playerData, objectReady);
-                if (savageLocation) {
-                    return savageLocation;
-                }
+            if (!location && context.botProfile?.fortifyBase && isSavageStaticDefence(objectReady.name)) {
+                location = getSavageStaticDefencePlacement(game, playerData, objectReady);
             }
-            let logic = BUILDING_NAME_TO_RULES.get(objectReady.name)!;
-            return logic.getPlacementLocation(game, playerData, objectReady);
+            if (!location) {
+                const logic = BUILDING_NAME_TO_RULES.get(objectReady.name)!;
+                location = logic.getPlacementLocation(game, playerData, objectReady);
+            }
         } else {
-            // fallback placement logic
-            return getDefaultPlacementLocation(game, playerData, playerData.startLocation, objectReady);
+            location = getDefaultPlacementLocation(game, playerData, playerData.startLocation, objectReady);
         }
+
+        if (location) {
+            this.cachedPlacement = { name: objectReady.name, location, tick };
+        }
+        return location;
     }
 
 //     private handleBuildingReady(context: MissionContext, objectReady: TechnoRules) {

@@ -162,7 +162,8 @@ export class Terrain {
         });
     }
     computePath(speedType: SpeedType, isInfantry: boolean, startTile: Tile, startOnBridge: boolean, endTile: Tile, endOnBridge: boolean, options: PathOptions = {}): PathNode[] {
-        let { maxExpandedNodes = Number.POSITIVE_INFINITY, bestEffort = true, excludeTiles, ignoredBlockers = [] } = options;
+        // Unbounded A* stalls late-game when many units repath; 2500 is enough for typical map distances.
+        let { maxExpandedNodes = 2500, bestEffort = true, excludeTiles, ignoredBlockers = [] } = options;
         const graph = this.computePassabilityGraph(speedType, isInfantry);
         const ignoredTiles = ignoredBlockers
             .map(blocker => this.tileOccupation.calculateTilesForGameObject(blocker.tile, blocker))

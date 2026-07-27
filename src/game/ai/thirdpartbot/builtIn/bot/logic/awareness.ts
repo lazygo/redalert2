@@ -70,6 +70,9 @@ const RALLY_POINT_UPDATE_INTERVAL_TICKS = 90;
 
 const THREAT_UPDATE_INTERVAL_TICKS = 30;
 
+/** Rebuild hostile spatial index less often than every AI tick — major late-game cost. */
+const HOSTILE_QUADTREE_UPDATE_INTERVAL_TICKS = 15;
+
 const EXPANSION_UPDATE_INTERVAL_TICKS = 240;
 
 const EXPANSION_MIN_MONEY = 4000;
@@ -207,20 +210,21 @@ export class MatchAwarenessImpl implements MatchAwareness {
             this.logger(`${updateRatio * 100.0}% of sectors updated in last 60 seconds.`);
         }
 
-        // Build the quadtree, if this is too slow we should consider doing this periodically.
-        const hostileUnitIds = game.getVisibleUnits(playerData.name, "enemy");
-        try {
-            const hostileUnits = hostileUnitIds
-                .map((id) => game.getGameObjectData(id))
-                .filter(
-                    (gameObjectData: GameObjectData | undefined): gameObjectData is GameObjectData =>
-                        gameObjectData !== undefined,
-                );
+        // Build the quadtree periodically — full rebuild every AI tick was too expensive late-game.
+        if (game.getCurrentTick() % HOSTILE_QUADTREE_UPDATE_INTERVAL_TICKS === 0) {
+            const hostileUnitIds = game.getVisibleUnits(playerData.name, "enemy");
+            try {
+                const hostileUnits = hostileUnitIds
+                    .map((id) => game.getGameObjectData(id))
+                    .filter(
+                        (gameObjectData: GameObjectData | undefined): gameObjectData is GameObjectData =>
+                            gameObjectData !== undefined,
+                    );
 
-            rebuildQuadtree(this.hostileQuadTree, hostileUnits);
-        } catch (err) {
-            // Hack. Will be fixed soon.
-            console.error(`caught error`, hostileUnitIds);
+                rebuildQuadtree(this.hostileQuadTree, hostileUnits);
+            } catch (err) {
+                console.error(`caught error rebuilding hostile quadtree`, err);
+            }
         }
 
         if (game.getCurrentTick() % THREAT_UPDATE_INTERVAL_TICKS == 0) {

@@ -1,4 +1,4 @@
-import { Box2, GameApi, GameMath, PlayerData, TechnoRules, Tile, Vector2 } from "../../../game-api";
+import { Box2, GameApi, PlayerData, TechnoRules, Tile, Vector2 } from "../../../game-api";
 import { GlobalThreat } from "../threat/threat";
 import { BasicBuilding } from "./basicBuilding";
 import { getDefaultPlacementLocation } from "./buildingRules";
@@ -32,16 +32,16 @@ export class ResourceCollectionBuilding extends BasicBuilding {
         var closeOreDist: number | undefined;
         let selectedLocation: Vector2 = conyardVectors[0];
 
+        const allTileResourceData = game.mapApi.getAllTilesResourceData();
         for (const conyard of conyardVectors) {
-            let allTileResourceData = game.mapApi.getAllTilesResourceData();
             for (let i = 0; i < allTileResourceData.length; ++i) {
-                let tileResourceData = allTileResourceData[i];
+                const tileResourceData = allTileResourceData[i];
                 if (tileResourceData.spawnsOre) {
-                    let dist = GameMath.sqrt(
-                        (conyard.x - tileResourceData.tile.rx) ** 2 + (conyard.y - tileResourceData.tile.ry) ** 2,
-                    );
-                    if (closeOreDist == undefined || dist < closeOreDist) {
-                        closeOreDist = dist;
+                    const dx = conyard.x - tileResourceData.tile.rx;
+                    const dy = conyard.y - tileResourceData.tile.ry;
+                    const distSq = dx * dx + dy * dy;
+                    if (closeOreDist == undefined || distSq < closeOreDist) {
+                        closeOreDist = distSq;
                         closeOre = tileResourceData.tile;
                     }
                 }

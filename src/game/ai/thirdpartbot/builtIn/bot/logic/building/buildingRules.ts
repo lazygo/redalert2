@@ -1,7 +1,6 @@
 import {
     BuildingPlacementData,
     GameApi,
-    GameMath,
     ObjectType,
     PlayerData,
     TechnoRules,
@@ -121,14 +120,11 @@ export function getAdjacencyTiles(
 //         });
 // }
 
-function distance(x1: number, y1: number, x2: number, y2: number) {
-    var dx = x1 - x2;
-    var dy = y1 - y2;
-    let tmp = dx * dx + dy * dy;
-    if (0 === tmp) {
-        return 0;
-    }
-    return GameMath.sqrt(tmp);
+/** Squared Euclidean distance — avoids GameMath.sqrt Newton loops on hot AI paths. */
+function distanceSq(x1: number, y1: number, x2: number, y2: number): number {
+    const dx = x1 - x2;
+    const dy = y1 - y2;
+    return dx * dx + dy * dy;
 }
 
 export function getDefaultPlacementLocation(
@@ -145,28 +141,36 @@ export function getDefaultPlacementLocation(
         return undefined;
     }
     const tiles = getAdjacencyTiles(game, playerData, technoRules, onWater, minSpace);
+    if (tiles.length === 0) {
+        return undefined;
+    }
 
     // Score tiles: prefer close to ideal point but penalize crowding near many buildings.
     // This encourages a more spread-out base layout with room for unit movement.
     const buildings = game.getVisibleUnits(playerData.name, "self", (r: TechnoRules) => r.type === ObjectType.Building) as any;
-    const buildingPositions: Vector2[] = [];
+    const buildingPositions: { x: number; y: number }[] = [];
     for (const bid of buildings) {
         const bd = game.getGameObjectData(bid);
-        if (bd?.tile) buildingPositions.push(new Vector2(bd.tile.rx, bd.tile.ry));
+        if (bd?.tile) {
+            buildingPositions.push({ x: bd.tile.rx, y: bd.tile.ry });
+        }
     }
 
+    // Crowding radius 4 → compare against 16 in squared space; weight keeps relative order.
+    const CROWD_RADIUS_SQ = 16;
     const scored = tiles.map((tile) => {
-        const distToIdeal = distance(tile.rx, tile.ry, idealPoint.x, idealPoint.y);
-        // Count nearby buildings within 3 tiles — more neighbors = higher crowding penalty
+        const distToIdealSq = distanceSq(tile.rx, tile.ry, idealPoint.x, idealPoint.y);
         let crowding = 0;
         for (const bp of buildingPositions) {
-            const d = distance(tile.rx, tile.ry, bp.x, bp.y);
-            if (d < 4) crowding += (4 - d);
+            const dSq = distanceSq(tile.rx, tile.ry, bp.x, bp.y);
+            if (dSq < CROWD_RADIUS_SQ) {
+                crowding += CROWD_RADIUS_SQ - dSq;
+            }
         }
-        // Combined score: distance matters most, but crowding adds a penalty
-        const score = distToIdeal + crowding * 0.8;
+        const score = distToIdealSq + crowding * 0.8;
         return { tile, score };
-    }).sort((a, b) => a.score - b.score);
+    });
+    scored.sort((a, b) => a.score - b.score);
 
     for (const entry of scored) {
         if (entry.tile && game.canPlaceBuilding(playerData.name, technoRules.name, entry.tile)) {

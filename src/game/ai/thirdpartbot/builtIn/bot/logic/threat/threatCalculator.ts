@@ -6,50 +6,77 @@ import {
     ObjectType,
     PlayerData,
     ProjectileRules,
-    UnitData,
     WeaponRules,
 } from "../../../game-api";
 import { GlobalThreat } from "./threat";
 import { getCachedTechnoRules } from "../common/rulesCache";
 
+/**
+ * Single-pass threat estimate — avoids 8× getVisibleUnits full-map scans per refresh.
+ */
 export function calculateGlobalThreat(game: GameApi, playerData: PlayerData, visibleAreaPercent: number): GlobalThreat {
-    let groundUnits = game.getVisibleUnits(
-        playerData.name,
-        "enemy",
-        (r) => r.type == ObjectType.Vehicle || r.type == ObjectType.Infantry,
-    );
-    let airUnits = game.getVisibleUnits(playerData.name, "enemy", (r) => r.movementZone == MovementZone.Fly);
-    let groundDefence = game
-        .getVisibleUnits(playerData.name, "enemy", (r) => r.type == ObjectType.Building)
-        .filter((unitId) => isAntiGround(game, unitId));
-    let antiAirPower = game
-        .getVisibleUnits(playerData.name, "enemy", (r) => r.type != ObjectType.Building)
-        .filter((unitId) => isAntiAir(game, unitId));
+    const enemyIds = game.getVisibleUnits(playerData.name, "enemy");
+    const selfIds = game.getVisibleUnits(playerData.name, "self");
 
-    let ourAntiGroundUnits = game
-        .getVisibleUnits(playerData.name, "self", (r) => r.isSelectableCombatant)
-        .filter((unitId) => isAntiGround(game, unitId));
-    let ourAntiAirUnits = game
-        .getVisibleUnits(playerData.name, "self", (r) => r.isSelectableCombatant || r.type === ObjectType.Building)
-        .filter((unitId) => isAntiAir(game, unitId));
-    let ourGroundDefence = game
-        .getVisibleUnits(playerData.name, "self", (r) => r.type === ObjectType.Building)
-        .filter((unitId) => isAntiGround(game, unitId));
-    let ourAirUnits = game.getVisibleUnits(
-        playerData.name,
-        "self",
-        (r) => r.movementZone == MovementZone.Fly && r.isSelectableCombatant,
-    );
+    let observedGroundThreat = 0;
+    let observedAirThreat = 0;
+    let observedAntiAirThreat = 0;
+    let observedGroundDefence = 0;
 
-    let observedGroundThreat = calculateFirepowerForUnits(game, groundUnits);
-    let observedAirThreat = calculateFirepowerForUnits(game, airUnits);
-    let observedAntiAirThreat = calculateFirepowerForUnits(game, antiAirPower);
-    let observedGroundDefence = calculateFirepowerForUnits(game, groundDefence);
+    for (const unitId of enemyIds) {
+        const data = game.getGameObjectData(unitId);
+        if (!data?.rules) {
+            continue;
+        }
+        const rules = data.rules;
+        const fp = calculateFirepowerForUnit(game, data);
+        const isBuilding = rules.type === ObjectType.Building;
+        const isGroundArmy =
+            rules.type === ObjectType.Vehicle || rules.type === ObjectType.Infantry;
+        const isFlyer = rules.movementZone === MovementZone.Fly;
 
-    let ourAntiGroundPower = calculateFirepowerForUnits(game, ourAntiGroundUnits);
-    let ourAntiAirPower = calculateFirepowerForUnits(game, ourAntiAirUnits);
-    let ourAirPower = calculateFirepowerForUnits(game, ourAirUnits);
-    let ourGroundDefencePower = calculateFirepowerForUnits(game, ourGroundDefence);
+        if (isGroundArmy) {
+            observedGroundThreat += fp;
+        }
+        if (isFlyer) {
+            observedAirThreat += fp;
+        }
+        if (isBuilding && isAntiGround(game, unitId)) {
+            observedGroundDefence += fp;
+        }
+        if (!isBuilding && isAntiAir(game, unitId)) {
+            observedAntiAirThreat += fp;
+        }
+    }
+
+    let ourAntiGroundPower = 0;
+    let ourAntiAirPower = 0;
+    let ourAirPower = 0;
+    let ourGroundDefencePower = 0;
+
+    for (const unitId of selfIds) {
+        const data = game.getGameObjectData(unitId);
+        if (!data?.rules) {
+            continue;
+        }
+        const rules = data.rules;
+        const fp = calculateFirepowerForUnit(game, data);
+        const isBuilding = rules.type === ObjectType.Building;
+        const combatant = !!(rules as { isSelectableCombatant?: boolean }).isSelectableCombatant;
+
+        if (combatant && isAntiGround(game, unitId)) {
+            ourAntiGroundPower += fp;
+        }
+        if ((combatant || isBuilding) && isAntiAir(game, unitId)) {
+            ourAntiAirPower += fp;
+        }
+        if (isBuilding && isAntiGround(game, unitId)) {
+            ourGroundDefencePower += fp;
+        }
+        if (rules.movementZone === MovementZone.Fly && combatant) {
+            ourAirPower += fp;
+        }
+    }
 
     return new GlobalThreat(
         visibleAreaPercent,
@@ -64,8 +91,6 @@ export function calculateGlobalThreat(game: GameApi, playerData: PlayerData, vis
     );
 }
 
-// For the purposes of determining if units can target air/ground, we look purely at the technorules and only the base weapon (not elite)
-// This excludes some special cases such as IFVs changing turrets, but we have to deal with it for now.
 function isAntiGround(gameApi: GameApi, unitId: any): boolean {
     return testProjectile(gameApi, unitId, (p) => p.isAntiGround);
 }
@@ -95,8 +120,7 @@ function testProjectile(gameApi: GameApi, unitId: any, test: (p: ProjectileRules
 }
 
 function getProjectileRules(gameApi: GameApi, weapon: WeaponRules | null): ProjectileRules | null {
-    const primaryProjectile = weapon ? gameApi.rulesApi.getProjectile(weapon.projectile) : null;
-    return primaryProjectile;
+    return weapon ? gameApi.rulesApi.getProjectile(weapon.projectile) : null;
 }
 
 function calculateFirepowerForUnit(gameApi: GameApi, gameObjectData: GameObjectData): number {
@@ -118,15 +142,4 @@ function calculateFirepowerForUnit(gameApi: GameApi, gameObjectData: GameObjectD
         threat += (hpRatio * ((weapon.damage + 1) * GameMath.sqrt(weapon.range + 1))) / Math.max(weapon.rof, 1);
     }
     return Math.min(800, threat);
-}
-
-function calculateFirepowerForUnits(game: GameApi, unitIds: any[]) {
-    let threat = 0;
-    unitIds.forEach((unitId) => {
-        const gameObjectData = game.getGameObjectData(unitId);
-        if (gameObjectData) {
-            threat += calculateFirepowerForUnit(game, gameObjectData);
-        }
-    });
-    return threat;
 }
