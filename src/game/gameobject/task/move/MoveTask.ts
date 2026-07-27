@@ -3,14 +3,12 @@ import { Infantry } from "@/game/gameobject/Infantry";
 import { MovementZone } from "@/game/type/MovementZone";
 import { findIndexReverse, findReverse } from "@/util/array";
 import { SpeedType } from "@/game/type/SpeedType";
-import { MoveState, CollisionState, MoveResult, MoveTrait } from "@/game/gameobject/trait/MoveTrait";
+import { MoveState, CollisionState, MoveResult } from "@/game/gameobject/trait/MoveTrait";
 import { WaitTicksTask } from "@/game/gameobject/task/system/WaitTicksTask";
 import { MoveAsideTask } from "@/game/gameobject/task/move/MoveAsideTask";
 import { MovePositionHelper } from "@/game/gameobject/unit/MovePositionHelper";
 import { RadialTileFinder } from "@/game/map/tileFinder/RadialTileFinder";
 import { RangeHelper } from "@/game/gameobject/unit/RangeHelper";
-import AppLogger from "@/util/logger";
-const Logger = AppLogger;
 import { Coords } from "@/game/Coords";
 import { TaskStatus } from "@/game/gameobject/task/system/TaskStatus";
 import { getZoneType, ZoneType } from "@/game/gameobject/unit/ZoneType";
@@ -73,7 +71,6 @@ export class MoveTask extends Task {
     protected toBridge: boolean;
     protected options?: MoveOptions;
     public preventOpportunityFire = false;
-    private logger: typeof Logger;
     private destinationLeptons: Vector2;
     private currentWaypointLeptons: Vector2;
     private needsPathUpdate = false;
@@ -95,7 +92,6 @@ export class MoveTask extends Task {
         this.targetTile = targetTile;
         this.toBridge = toBridge;
         this.options = options;
-        this.logger = AppLogger.get("move") as any;
         this.destinationLeptons = new Vector2();
         this.currentWaypointLeptons = new Vector2();
         this.targetLinesConfig = { pathNodes: [] };
@@ -1031,7 +1027,8 @@ export class MoveTask extends Task {
         }
         return this.targetLinesConfig;
     }
-    private log(unit: Unit, message: string): void {
-        this.logger.debug(`<${unit.id}>: ${message}`);
+    private log(_unit: Unit, _message: string): void {
+        // Pathfinding debug is extremely high-frequency; never emit to console in production.
+        // Flip to true locally only when diagnosing MoveTask.
     }
 }
