@@ -4,6 +4,7 @@ export class Strings {
     private data: {
         [key: string]: string;
     } = {};
+    private missingLogged = new Set<string>();
     constructor(source?: CsfFile | {
         [key: string]: string;
     }) {
@@ -50,7 +51,11 @@ export class Strings {
         if ((/^NOSTR:/i).test(name)) {
             return name.replace(/^NOSTR:/i, "");
         }
-        console.warn(`[Strings] String with name "${name}" not found"`);
+        const missingKey = name.toLowerCase();
+        if (!this.missingLogged.has(missingKey)) {
+            this.missingLogged.add(missingKey);
+            console.warn(`[Strings] String with name "${name}" not found`);
+        }
         return name as unknown as string;
     }
     public getKeys(): string[] {

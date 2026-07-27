@@ -108,9 +108,8 @@ export class Sound {
                 return spec;
             console.warn(`Sound "${soundKey}" is not defined`);
         }
-        else {
-            console.warn(`No sound is defined for key "${SoundKey[key as keyof typeof SoundKey]}"`);
-        }
+        // Empty AudioVisual keys (CreateUnitSound= etc.) are intentional — skip warn spam.
+        return undefined;
     }
     play(key: SoundKey | string, channel: ChannelType): PlaybackHandle | undefined {
         const spec = this.getSoundSpec(key);
