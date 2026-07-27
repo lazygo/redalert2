@@ -118,7 +118,9 @@ export class ScoutingManager {
                 (r) =>
                     r.capturable &&
                     r.needsEngineer &&
-                    ((r.produceCashAmount ?? 0) > 0 || r.name === "CAOILD"),
+                    ((r.produceCashAmount ?? 0) > 0 ||
+                        (r.produceCashStartup ?? 0) > 0 ||
+                        r.name === "CAOILD"),
             )) {
                 const data = gameApi.getGameObjectData(objectId);
                 if (!data?.tile) {

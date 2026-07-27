@@ -27,11 +27,17 @@ const CHECK_INTERVAL_TICKS = 120;
 const MAX_ATTEMPT_COUNT = 3;
 const MAX_CONCURRENT_CAPTURE_MISSIONS = 2;
 const SAVAGE_MAX_CONCURRENT_CAPTURE_MISSIONS = 3;
+/** Concurrent oil missions — keep piping engineers until the map is dry. */
+const MAX_CONCURRENT_OIL_MISSIONS = 2;
+const BRUTAL_MAX_CONCURRENT_OIL_MISSIONS = 4;
+const SAVAGE_MAX_CONCURRENT_OIL_MISSIONS = 6;
 /** Above bridge attack-route repair (118) and spy (110) so engineers are actually queued for oil. */
 const OIL_DERRICK_CAPTURE_PRIORITY = 135;
 const TECH_CAPTURE_PRIORITY = 68;
 const DEFAULT_CAPTURE_PRIORITY = 52;
 const CAPTURE_PREPARE_TIMEOUT_TICKS = 15 * 75;
+/** Free a stuck oil slot so the next derrick can be attempted. */
+const OIL_ACTING_TIMEOUT_TICKS = 15 * 90;
 
 const REFINERY_NAMES = ["GAREFN", "NAREFN"];
 
@@ -52,6 +58,7 @@ export class EngineerMission extends Mission {
     private state = EngineerMissionState.Preparing;
     private lastActionAttemptTick = -1;
     private preparingSinceTick: number | null = null;
+    private actingSinceTick: number | null = null;
 
     constructor(
         uniqueName: string,
@@ -91,6 +98,11 @@ export class EngineerMission extends Mission {
         }
 
         if (engineers.length === 0 && this.state === EngineerMissionState.Acting) {
+            // Capture often consumes the engineer one tick before ownership updates —
+            // for oil, request a replacement instead of burning the attempt budget.
+            if (this.isOilCapture) {
+                return requestUnitsWithSamePriority(engineerTypes, this.priority + 8);
+            }
             return disbandMission(LOST_ENGINEER);
         }
 
@@ -116,6 +128,7 @@ export class EngineerMission extends Mission {
             // Oil: engineer moves immediately; escort is best-effort and never blocks capture.
             if (this.isOilCapture) {
                 this.state = EngineerMissionState.Acting;
+                this.actingSinceTick = tick;
             } else {
                 const composition = buildCaptureComposition(
                     side,
@@ -136,6 +149,18 @@ export class EngineerMission extends Mission {
                     }
                 }
                 this.state = EngineerMissionState.Acting;
+            }
+        }
+
+        if (this.state === EngineerMissionState.Acting) {
+            const tick = game.getCurrentTick();
+            if (this.actingSinceTick === null) {
+                this.actingSinceTick = tick;
+            } else if (
+                this.isOilCapture &&
+                tick > this.actingSinceTick + OIL_ACTING_TIMEOUT_TICKS
+            ) {
+                return disbandMission(NO_PATH);
             }
         }
 
@@ -312,16 +337,6 @@ function findCapturableOilDerrickIds(game: GameApi, playerName: string): number[
     return [...ids];
 }
 
-function countVisibleUncapturedOilDerricks(game: GameApi, playerName: string): number {
-    return findCapturableOilDerrickIds(game, playerName).filter((id) => {
-        const tile = game.getGameObjectData(id)?.tile;
-        if (!tile) {
-            return false;
-        }
-        return game.mapApi.isVisibleTile(tile, playerName);
-    }).length;
-}
-
 function countActiveOilCaptureMissions(missionController: MissionController): number {
     return missionController
         .getMissions()
@@ -329,9 +344,12 @@ function countActiveOilCaptureMissions(missionController: MissionController): nu
 }
 
 function hasPendingVisibleOil(game: GameApi, playerName: string, missionController: MissionController): boolean {
-    const visibleOil = countVisibleUncapturedOilDerricks(game, playerName);
-    const activeOil = countActiveOilCaptureMissions(missionController);
-    return visibleOil > activeOil;
+    // Prefer finishing oil over bridge repair whenever any derrick remains free.
+    const remaining = findCapturableOilDerrickIds(game, playerName).length;
+    if (remaining > 0) {
+        return true;
+    }
+    return countActiveOilCaptureMissions(missionController) > 0;
 }
 
 function getCaptureMissionPriority(
@@ -501,10 +519,16 @@ export class EngineerMissionFactory {
             return;
         }
 
+        // Brutal/Savage already learn every neutral derrick via getNeutralUnits —
+        // do not wait for fog reveal or scouting will cap captures at a handful.
+        const requireVisible = !isBrutalOrSavageProfile(context.botProfile);
         const oilIds = findCapturableOilDerrickIds(game, playerData.name).filter((id) => {
             const data = game.getGameObjectData(id);
             if (!data?.tile) {
                 return false;
+            }
+            if (!requireVisible) {
+                return true;
             }
             return game.mapApi.isVisibleTile(data.tile, playerData.name);
         });
@@ -513,7 +537,13 @@ export class EngineerMissionFactory {
             return;
         }
 
-        const maxOilMissions = isBrutalOrSavageProfile(context.botProfile) ? 2 : 1;
+        const profileId = context.botProfile?.id;
+        const maxOilMissions =
+            profileId === "savage"
+                ? SAVAGE_MAX_CONCURRENT_OIL_MISSIONS
+                : isBrutalOrSavageProfile(context.botProfile)
+                  ? BRUTAL_MAX_CONCURRENT_OIL_MISSIONS
+                  : MAX_CONCURRENT_OIL_MISSIONS;
         let activeOil = countActiveOilCaptureMissions(missionController);
 
         const scored = oilIds
@@ -573,9 +603,14 @@ export class EngineerMissionFactory {
         const playerData = game.getPlayerData(context.player.name);
         const savage = context.botProfile?.id === "savage";
         const maxCaptures = savage ? SAVAGE_MAX_CONCURRENT_CAPTURE_MISSIONS : MAX_CONCURRENT_CAPTURE_MISSIONS;
+        // Oil uses capture-oil-* and has its own concurrency budget — don't let it fill this slot.
         const activeCaptures = missionController
             .getMissions()
-            .filter((m) => m.getUniqueName().startsWith("capture-")).length;
+            .filter(
+                (m) =>
+                    m.getUniqueName().startsWith("capture-") &&
+                    !m.getUniqueName().startsWith("capture-oil-"),
+            ).length;
         if (activeCaptures >= maxCaptures) {
             return;
         }
@@ -624,10 +659,12 @@ export class EngineerMissionFactory {
                 continue;
             }
             const rules = targetData.rules as { produceCashAmount?: number; name?: string };
-            const oilCapture = isOilDerrick(rules);
+            // Oil is handled exclusively by maybeCreateOilCaptureMissions.
+            if (isOilDerrick(rules)) {
+                continue;
+            }
             const priority = getCaptureMissionPriority(rules, savage);
-            const baseEscortLevel = (this.lostEngineerCounts[buildingId] ?? 0) + 1;
-            const escortLevel = oilCapture ? Math.max(2, baseEscortLevel) : baseEscortLevel;
+            const escortLevel = (this.lostEngineerCounts[buildingId] ?? 0) + 1;
             const added = missionController.addMission(
                 new EngineerMission(
                     "capture-" + buildingId,
@@ -637,7 +674,7 @@ export class EngineerMissionFactory {
                     "capture",
                     false,
                     logger,
-                    oilCapture,
+                    false,
                 ).withOnFinish((_unitIds, reason) => {
                     if (reason === LOST_ENGINEER) {
                         this.lostEngineerCounts[buildingId] =
@@ -649,11 +686,7 @@ export class EngineerMissionFactory {
             );
             if (added) {
                 created++;
-                logger(
-                    oilCapture
-                        ? `Created oil capture mission for derrick ${buildingId} (priority ${priority}, escort ${escortLevel})`
-                        : `Created engineer capture mission for building ${buildingId}`,
-                );
+                logger(`Created engineer capture mission for building ${buildingId}`);
             }
         }
     }
