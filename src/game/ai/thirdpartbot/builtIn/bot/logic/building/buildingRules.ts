@@ -250,4 +250,21 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["HTK", new BasicGroundUnit(5, 2, 0.33, 1.5)], // Flak Track
     ["ZEP", new BasicAirUnit(8, 2, 5, 1)], // Kirov
     ["V3", new ArtilleryUnit(10, 10, 0, 4)], // V3 Rocket Launcher
+
+    // China (Confederation / CMCV→CACNST) — without these, AI priority stays 0 and freezes after deploy.
+    ["CAPOWR", new PowerPlant()],
+    ["CAREFN", new ResourceCollectionBuilding(10, 3)],
+    ["CAWEAP", new BasicBuilding(15, 3)],
+    ["CAHAND", new BasicBuilding(12, 1)],
+    ["CHAR", new Harvester(15, 4, 2)],
+    ["CADEPT", new RepairDepotBuilding()],
+    ["CARADR", new BasicBuilding(12, 2, 400)],
+    ["CANRCT", new PowerPlant()],
+    ["CAYARD", new NavalYardBuilding(8)],
+    ["CATECH", new BasicBuilding(22, 1, 2800)],
+    ["CAWALL", new AntiGroundStaticDefence(0, 0, 0, 0)],
+    ["CAPILL", new AntiGroundStaticDefence(3, 2, 7.5, 8)],
+    ["CTESLA", new AntiGroundStaticDefence(4, 2, 10, 6)],
+    ["MSAM", new AntiAirStaticDefence(2, 2, 7.5)],
+    ["CMCV", new BasicGroundUnit(0, 0)], // Mobile construction — produced via McvReserve, not attack
 ]);

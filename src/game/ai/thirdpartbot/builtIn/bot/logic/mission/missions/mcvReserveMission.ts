@@ -5,10 +5,10 @@ import { MissionContext } from "../../common/context";
 import { DebugLogger } from "../../common/utils";
 import type { StrategicFocusPlanner } from "../../../strategy/strategicFocusPlanner";
 
-const REPAIR_DEPOT_NAMES = ["GADEPT", "NADEPT"];
-const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
+const REPAIR_DEPOT_NAMES = ["GADEPT", "NADEPT", "CADEPT"];
+const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP", "CAWEAP"];
 
-export const MCV_UNIT_NAMES = ["AMCV", "SMCV"] as const;
+export const MCV_UNIT_NAMES = ["AMCV", "SMCV", "CMCV"] as const;
 const ABSOLUTE_MAX_MOBILE_MCVS = 2;
 
 /** During expand windows MCV must outrank harass fill (~38) but stay below oil/spy. */

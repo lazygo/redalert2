@@ -39,7 +39,7 @@ const CAPTURE_PREPARE_TIMEOUT_TICKS = 15 * 75;
 /** Free a stuck oil slot so the next derrick can be attempted. */
 const OIL_ACTING_TIMEOUT_TICKS = 15 * 90;
 
-const REFINERY_NAMES = ["GAREFN", "NAREFN"];
+const REFINERY_NAMES = ["GAREFN", "NAREFN", "CAREFN"];
 
 enum EngineerMissionState {
     Preparing = 0,
@@ -390,14 +390,19 @@ function scoreEnemyCaptureTarget(game: GameApi, playerName: string, objectId: nu
     const valueByName: Record<string, number> = {
         GACNST: 400,
         NACNST: 400,
+        CACNST: 400,
         GAWEAP: 350,
         NAWEAP: 350,
+        CAWEAP: 350,
         GATECH: 320,
         NATECH: 320,
+        CATECH: 320,
         GAREFN: 280,
         NAREFN: 280,
+        CAREFN: 280,
         GAPILE: 200,
         NAHAND: 200,
+        CAHAND: 200,
     };
     const nameScore = valueByName[data.name] ?? 120;
     const playerData = game.getPlayerData(playerName);

@@ -1,11 +1,7 @@
 import {
     ActionsApi,
-    BotContext,
     Box2,
     GameApi,
-    GameMath,
-    GameObjectData,
-    ObjectType,
     OrderType,
     PlayerData,
     Rectangle,
@@ -32,7 +28,7 @@ import { isSavageProfile } from "../../../BotDifficultyProfile";
 
 const ORDER_COOLDOWN_TICKS = 60;
 
-const mcvTypes = ["AMCV", "SMCV"];
+const mcvTypes = ["AMCV", "SMCV", "CMCV"];
 
 const CONYARD_SCAN_DISTANCE = 15; // distance to check a conyard is already in place
 const CONYARD_DEPLOY_SCAN_DISTANCE = 10; // distance to check for a deployable location

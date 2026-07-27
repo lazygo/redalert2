@@ -138,14 +138,19 @@ export class DefenceMissionFactory {
                     !!r.constructionYard ||
                     r.name === "AMCV" ||
                     r.name === "SMCV" ||
+                    r.name === "CMCV" ||
                     (savage &&
                         (r.name === "GAREF" ||
                             r.name === "NAREF" ||
+                            r.name === "CAREFN" ||
                             r.name === "GAPOWR" ||
                             r.name === "NAPOWR" ||
+                            r.name === "CAPOWR" ||
                             r.name === "NANRCT" ||
+                            r.name === "CANRCT" ||
                             r.name === "GAWEAP" ||
-                            r.name === "NAWEAP")),
+                            r.name === "NAWEAP" ||
+                            r.name === "CAWEAP")),
             )
             .map((unitId) => game.getGameObjectData(unitId))
             .filter((unit): unit is GameObjectData => unit != null)

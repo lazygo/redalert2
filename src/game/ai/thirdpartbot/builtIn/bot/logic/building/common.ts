@@ -35,8 +35,10 @@ export const getSavageStaticDefencePlacement = (
             r.name === "NAREF" ||
             r.name === "GAPOWR" ||
             r.name === "NAPOWR" ||
+            r.name === "CAPOWR" ||
             r.name === "GAWEAP" ||
-            r.name === "NAWEAP",
+            r.name === "NAWEAP" ||
+            r.name === "CAWEAP",
     );
     for (const buildingId of keyBuildingIds) {
         const building = game.getGameObjectData(buildingId);

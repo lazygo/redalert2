@@ -22,21 +22,27 @@ const SAVAGE_STRUCTURE_TARGETS: Record<string, SavageStructureTarget> = {
     // Redundant production — parallel infantry / vehicle queues (gated by economy below).
     GAPILE: { min: 1, max: 3, priority: 17, sustainPriority: 8 },
     NAHAND: { min: 1, max: 3, priority: 17, sustainPriority: 8 },
+    CAHAND: { min: 1, max: 3, priority: 17, sustainPriority: 8 },
     GAWEAP: { min: 1, max: 3, priority: 19, sustainPriority: 9 },
     NAWEAP: { min: 1, max: 3, priority: 19, sustainPriority: 9 },
+    CAWEAP: { min: 1, max: 3, priority: 19, sustainPriority: 9 },
 
     // Power redundancy — survive raiders targeting power plants.
     GAPOWR: { min: 2, max: 4, priority: 22, sustainPriority: 8 },
     NAPOWR: { min: 2, max: 4, priority: 22, sustainPriority: 8 },
+    CAPOWR: { min: 2, max: 4, priority: 22, sustainPriority: 8 },
     NANRCT: { min: 1, max: 2, priority: 20, sustainPriority: 10 },
+    CANRCT: { min: 1, max: 2, priority: 20, sustainPriority: 10 },
 
     // Repair depots — unlock MCV production; build right after war factory.
     GADEPT: { min: 1, priority: 24 },
     NADEPT: { min: 1, priority: 24 },
+    CADEPT: { min: 1, priority: 24 },
 
     // Tech / late-game — beat redundant power & production spam once prerequisites exist.
     GATECH: { min: 1, priority: 30 },
     NATECH: { min: 1, priority: 30 },
+    CATECH: { min: 1, priority: 30 },
     GASPYSAT: { min: 1, priority: 22 },
     GAGAP: { min: 2, max: 3, priority: 14, sustainPriority: 8 },
     NAPSIS: { min: 1, priority: 18 },
@@ -45,33 +51,47 @@ const SAVAGE_STRUCTURE_TARGETS: Record<string, SavageStructureTarget> = {
     GAAIRC: { min: 1, max: 2, priority: 26, sustainPriority: 12 },
     AMRADR: { min: 1, max: 2, priority: 26, sustainPriority: 12 },
     NARADR: { min: 1, priority: 26 },
+    CARADR: { min: 1, max: 2, priority: 26, sustainPriority: 12 },
 
     // Ground defenses — ring around base, not just the front line.
     ATESLA: { min: 4, max: 8, priority: 13, sustainPriority: 5 },
     TESLA: { min: 4, max: 8, priority: 13, sustainPriority: 5 },
+    CTESLA: { min: 4, max: 8, priority: 13, sustainPriority: 5 },
     GAPILL: { min: 6, max: 12, priority: 10, sustainPriority: 4 },
     NALASR: { min: 6, max: 12, priority: 10, sustainPriority: 4 },
+    CAPILL: { min: 6, max: 12, priority: 10, sustainPriority: 4 },
 
     // Anti-air
     NASAM: { min: 4, max: 8, priority: 11, sustainPriority: 5 },
     NAFLAK: { min: 4, max: 8, priority: 11, sustainPriority: 5 },
+    MSAM: { min: 4, max: 8, priority: 11, sustainPriority: 5 },
 };
 
 const STATIC_DEFENCE_NAMES = new Set([
     "GAPILL",
     "NALASR",
+    "CAPILL",
     "ATESLA",
     "TESLA",
+    "CTESLA",
     "NASAM",
     "NAFLAK",
+    "MSAM",
 ]);
 
-const POWER_PLANT_NAMES = new Set(["GAPOWR", "NAPOWR", "NANRCT"]);
+const POWER_PLANT_NAMES = new Set(["GAPOWR", "NAPOWR", "NANRCT", "CAPOWR", "CANRCT"]);
 
-const PRODUCTION_STRUCTURE_NAMES = new Set(["GAPILE", "NAHAND", "GAWEAP", "NAWEAP"]);
-const REFINERY_NAMES = ["GAREFN", "NAREFN"];
-const BARRACKS_NAMES = ["GAPILE", "NAHAND"];
-const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
+const PRODUCTION_STRUCTURE_NAMES = new Set([
+    "GAPILE",
+    "NAHAND",
+    "CAHAND",
+    "GAWEAP",
+    "NAWEAP",
+    "CAWEAP",
+]);
+const REFINERY_NAMES = ["GAREFN", "NAREFN", "CAREFN"];
+const BARRACKS_NAMES = ["GAPILE", "NAHAND", "CAHAND"];
+const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP", "CAWEAP"];
 
 function countRefineries(game: GameApi, playerData: PlayerData): number {
     return REFINERY_NAMES.reduce((sum, name) => sum + numBuildingsOwnedOfName(game, playerData, name), 0);
@@ -218,10 +238,11 @@ export function applySavageStructurePriority(
     let fillPriority = target.priority * (1 - owned / target.min);
 
     if (
-        (buildingName === "GADEPT" || buildingName === "NADEPT") &&
+        (buildingName === "GADEPT" || buildingName === "NADEPT" || buildingName === "CADEPT") &&
         owned === 0 &&
         (numBuildingsOwnedOfName(game, playerData, "GAWEAP") > 0 ||
-            numBuildingsOwnedOfName(game, playerData, "NAWEAP") > 0)
+            numBuildingsOwnedOfName(game, playerData, "NAWEAP") > 0 ||
+            numBuildingsOwnedOfName(game, playerData, "CAWEAP") > 0)
     ) {
         fillPriority = Math.max(fillPriority, target.priority + 4);
     }

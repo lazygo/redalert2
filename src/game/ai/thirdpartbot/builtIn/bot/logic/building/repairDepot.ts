@@ -3,7 +3,7 @@ import { GlobalThreat } from "../threat/threat";
 import { BasicBuilding } from "./basicBuilding";
 import { numBuildingsOwnedOfName, numBuildingsOwnedOfType } from "./buildingRules";
 
-const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
+const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP", "CAWEAP"];
 
 function hasWarFactory(game: GameApi, playerData: PlayerData): boolean {
     return WAR_FACTORY_NAMES.some((name) => numBuildingsOwnedOfName(game, playerData, name) > 0);

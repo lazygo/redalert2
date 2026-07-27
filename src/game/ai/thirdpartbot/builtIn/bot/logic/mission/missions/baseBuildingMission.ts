@@ -94,7 +94,7 @@ export class BaseBuildingMission extends Mission {
         context: MissionContext,
     ) {
         if (BUILDING_NAME_TO_RULES.has(option.name)) {
-            if ((option.name === "GAYARD" || option.name === "NAYARD") && !context.botProfile?.enableNavy) {
+            if ((option.name === "GAYARD" || option.name === "NAYARD" || option.name === "CAYARD") && !context.botProfile?.enableNavy) {
                 return 0;
             }
             let logic = BUILDING_NAME_TO_RULES.get(option.name)!;

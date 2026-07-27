@@ -3,7 +3,7 @@ import { GlobalThreat } from "../threat/threat";
 import { BasicBuilding } from "./basicBuilding";
 import { getDefaultPlacementLocation, numBuildingsOwnedOfName } from "./buildingRules";
 
-const NAVAL_YARD_NAMES = new Set(["GAYARD", "NAYARD"]);
+const NAVAL_YARD_NAMES = new Set(["GAYARD", "NAYARD", "CAYARD"]);
 const ABSOLUTE_MAX_NAVAL_YARDS = 3;
 
 /** Naval yard — placed on water; count scales with coastline capacity, not a fixed cap of 1. */
