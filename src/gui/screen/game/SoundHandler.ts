@@ -6,6 +6,9 @@ import { Coords } from '@/game/Coords';
 import { PowerupType } from '@/game/type/PowerupType';
 import { SuperWeaponType } from '@/game/type/SuperWeaponType';
 import { RadarEventType } from '@/game/rules/general/RadarRules';
+import { OrderFeedbackType } from '@/game/order/OrderFeedbackType';
+import { QueueStatus } from '@/game/player/production/ProductionQueue';
+import { ObjectType } from '@/engine/type/ObjectType';
 
 const detectedSuperWeaponEvaByType = new Map([
     [SuperWeaponType.MultiMissile, 'EVA_NuclearSiloDetected'],
@@ -273,26 +276,95 @@ export class SoundHandler {
             this.eva.play(eva);
         }
     }
-    handleOrderPushed(unit: any, orderType: any, feedbackType: any): void {
+    handleOrderPushed(unit: any, _orderType: any, feedbackType: OrderFeedbackType): void {
+        if (!unit || feedbackType === OrderFeedbackType.None) {
+            return;
+        }
         const now = Date.now();
-        if (!this.lastFeedbackTime || now - this.lastFeedbackTime >= 250) {
-            let sound: string | undefined;
-            switch (feedbackType) {
-                case 'Attack':
-                    sound = unit.rules.voiceAttack;
-                    break;
-                case 'Move':
-                    sound = unit.rules.voiceMove;
-                    break;
-                case 'Capture':
-                    sound = unit.rules.voiceCapture || unit.rules.voiceSpecialAttack;
-                    break;
+        if (this.lastFeedbackTime && now - this.lastFeedbackTime < 250) {
+            return;
+        }
+        const sound = this.resolveOrderFeedbackVoice(unit, feedbackType);
+        if (sound) {
+            this.sound.play(sound, ChannelType.Effect);
+            this.lastFeedbackTime = now;
+        }
+    }
+    private resolveOrderFeedbackVoice(unit: any, feedbackType: OrderFeedbackType): string | undefined {
+        switch (feedbackType) {
+            case OrderFeedbackType.Attack:
+                return unit.rules.voiceAttack || this.resolveFactoryVoice(unit, 'voiceAttack');
+            case OrderFeedbackType.Move:
+                return unit.rules.voiceMove || this.resolveFactoryVoice(unit, 'voiceMove');
+            case OrderFeedbackType.Capture:
+                return unit.rules.voiceCapture || unit.rules.voiceSpecialAttack;
+            case OrderFeedbackType.SpecialAttack:
+                return unit.rules.voiceSpecialAttack || unit.rules.voiceAttack;
+            case OrderFeedbackType.Enter:
+                return unit.rules.voiceEnter || unit.rules.voiceMove;
+            default:
+                return undefined;
+        }
+    }
+    private resolveFactoryVoice(building: any, voiceField: 'voiceMove' | 'voiceAttack'): string | undefined {
+        if (!building?.isBuilding?.() || !building.factoryTrait || !this.player?.production) {
+            return undefined;
+        }
+        const queue = this.player.production.getQueueForFactory(building.factoryTrait.type);
+        const queuedVoice = queue?.getFirst()?.rules?.[voiceField];
+        if (queuedVoice) {
+            return queuedVoice;
+        }
+        for (const rules of this.player.production.getAvailableObjects()) {
+            if (this.player.production.getFactoryTypeFor(rules) !== building.factoryTrait.type) {
+                continue;
             }
-            if (sound) {
-                this.sound.play(sound, ChannelType.Effect);
-                this.lastFeedbackTime = now;
+            if (rules[voiceField]) {
+                return rules[voiceField];
             }
         }
+        return undefined;
+    }
+    handleAvailableObjectsUpdate(availableObjects: any[]): void {
+        if (!this.player) {
+            return;
+        }
+        const objectNames = availableObjects.map((object: any) => object.name).sort();
+        if (this.lastAvailableObjectNames.length &&
+            objectNames.some((name) => !this.lastAvailableObjectNames.includes(name))) {
+            this.eva.play('EVA_NewConstructionOptions');
+        }
+        this.lastAvailableObjectNames = objectNames;
+    }
+    handleProductionQueueUpdate(queue: any): void {
+        if (!this.player) {
+            return;
+        }
+        const previousStatus = this.lastQueueStatuses.get(queue.type);
+        this.lastQueueStatuses.set(queue.type, queue.status);
+        if (previousStatus === queue.status || queue.status !== QueueStatus.Ready) {
+            return;
+        }
+        const item = queue.getFirst();
+        if (!item) {
+            return;
+        }
+        if (item.rules.type === ObjectType.Building) {
+            this.eva.play('EVA_ConstructionComplete');
+            return;
+        }
+        let readySound: SoundKey | undefined;
+        if (item.rules.type === ObjectType.Infantry) {
+            readySound = SoundKey.CreateInfantrySound;
+        }
+        else if (item.rules.type === ObjectType.Aircraft) {
+            readySound = SoundKey.CreateAircraftSound;
+        }
+        else {
+            readySound = SoundKey.CreateUnitSound;
+        }
+        this.sound.play(readySound, ChannelType.Effect);
+        this.eva.play(item.rules.type === ObjectType.Infantry ? 'EVA_Training' : 'EVA_UnitReady');
     }
     handleSelectionChangeEvent(event: any): void {
         if (event.selection.length && event.selection[0].owner === this.player) {
