@@ -1,8 +1,8 @@
-import { GameApi, PlayerData } from "../../../game-api";
-import { numBuildingsOwnedOfName } from "./buildingRules";
-import { Mission, MissionAction, noop, requestUnitsWithSamePriority } from "../mission/mission";
-import { MissionContext } from "../common/context";
-import { DebugLogger } from "../common/utils";
+import { GameApi, PlayerData } from "../../../../game-api";
+import { numBuildingsOwnedOfName } from "../../building/buildingRules";
+import { Mission, MissionAction, noop, requestUnitsWithSamePriority } from "../mission";
+import { MissionContext } from "../../common/context";
+import { DebugLogger } from "../../common/utils";
 
 const REPAIR_DEPOT_NAMES = ["GADEPT", "NADEPT"];
 const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
