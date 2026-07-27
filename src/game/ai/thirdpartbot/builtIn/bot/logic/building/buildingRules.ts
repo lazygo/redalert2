@@ -2,11 +2,8 @@ import {
     BuildingPlacementData,
     GameApi,
     GameMath,
-    LandType,
     ObjectType,
     PlayerData,
-    Rectangle,
-    Size,
     TechnoRules,
     Tile,
     Vector2,
@@ -22,6 +19,8 @@ import { ResourceCollectionBuilding } from "./resourceCollectionBuilding";
 import { Harvester } from "./harvester";
 import { uniqBy } from "../common/utils";
 import { AntiAirStaticDefence } from "./antiAirStaticDefence";
+import { NavalYardBuilding } from "./navalYardBuilding";
+import { RepairDepotBuilding } from "./repairDepot";
 import { computeAdjacentRect, getAdjacentTiles } from "../common/tileUtils";
 
 export interface AiBuildingRules {
@@ -111,16 +110,16 @@ export function getAdjacencyTiles(
     return withDuplicatesRemoved.filter((tile) => !removedTiles.has(tile.id));
 }
 
-function getTileDistances(startPoint: Vector2, tiles: Tile[]) {
-    return tiles
-        .map((tile) => ({
-            tile,
-            distance: distance(tile.rx, tile.ry, startPoint.x, startPoint.y),
-        }))
-        .sort((a, b) => {
-            return a.distance - b.distance;
-        });
-}
+// function getTileDistances(startPoint: Vector2, tiles: Tile[]) {
+//     return tiles
+//         .map((tile) => ({
+//             tile,
+//             distance: distance(tile.rx, tile.ry, startPoint.x, startPoint.y),
+//         }))
+//         .sort((a, b) => {
+//             return a.distance - b.distance;
+//         });
+// }
 
 function distance(x1: number, y1: number, x2: number, y2: number) {
     var dx = x1 - x2;
@@ -189,12 +188,12 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["GAWEAP", new BasicBuilding(15, 3)], // War Factory
     ["GAPILE", new BasicBuilding(12, 1)], // Barracks
     ["CMIN", new Harvester(15, 4, 2)], // Chrono Miner
-    ["GADEPT", new BasicBuilding(1, 1, 10000)], // Repair Depot
+    ["GADEPT", new RepairDepotBuilding()], // Repair Depot — unlocks MCV
     ["GAAIRC", new BasicBuilding(12, 2, 400)], // Airforce Command
     ["AMRADR", new BasicBuilding(12, 2, 400)], // Airforce Command (USA)
 
     ["GATECH", new BasicBuilding(22, 1, 2800)], // Allied Battle Lab
-    ["GAYARD", new BasicBuilding(0, 0, 0)], // Naval Yard, disabled
+    ["GAYARD", new NavalYardBuilding(8)], // Naval Yard
     ["GASPYSAT", new BasicBuilding(16, 1, 2000)], // Spy Satellite Uplink
     ["GAGAP", new BasicBuilding(14, 2, 1500)], // 裂缝产生器 (Gap Generator)
 
@@ -226,10 +225,10 @@ export const BUILDING_NAME_TO_RULES = new Map<string, AiBuildingRules>([
     ["NAWEAP", new BasicBuilding(15, 3)], // War Factory
     ["NAHAND", new BasicBuilding(12, 1)], // Barracks
     ["HARV", new Harvester(15, 4, 2)], // War Miner
-    ["NADEPT", new BasicBuilding(1, 1, 10000)], // Repair Depot
+    ["NADEPT", new RepairDepotBuilding()], // Repair Depot — unlocks MCV
     ["NARADR", new BasicBuilding(12, 1, 400)], // Radar
     ["NANRCT", new PowerPlant()], // Nuclear Reactor
-    ["NAYARD", new BasicBuilding(0, 0, 0)], // Naval Yard, disabled
+    ["NAYARD", new NavalYardBuilding(8)], // Naval Yard
 
     ["NATECH", new BasicBuilding(22, 1, 2800)], // Soviet Battle Lab
     ["NAPSIS", new BasicBuilding(14, 1, 1500)], // Psychic Sensor (gap / detection)

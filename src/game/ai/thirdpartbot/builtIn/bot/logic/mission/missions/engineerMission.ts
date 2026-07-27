@@ -1,4 +1,4 @@
-import { GameApi, GameObjectData, OrderType, SideType, SpeedType, UnitData } from "../../../../game-api";
+import { GameApi, GameObjectData, OrderType, SideType, SpeedType, UnitData, Vector2 } from "../../../../game-api";
 import {
     Mission,
     MissionAction,
@@ -11,6 +11,14 @@ import { DebugLogger, toPathNode, toVector2 } from "../../common/utils";
 import { computeAdjacentRect, getAdjacentTiles } from "../../common/tileUtils";
 import { MissionContext, SupabotContext } from "../../common/context";
 import { UnitComposition } from "../../../strategy/strategy";
+import {
+    ATTACK_PATH_BRIDGE_SCORE_THRESHOLD,
+    BRIDGE_REPAIR_ATTACK_PATH_PRIORITY,
+    getActiveAttackRoutePoints,
+    getBridgeRepairPriorityForHut,
+    hasActiveAttackMissions,
+    scoreBridgeHutForAttackRoute,
+} from "./bridgeRepairUtils";
 
 const ACTION_COOLDOWN_TICKS = 30;
 const CHECK_INTERVAL_TICKS = 200;
@@ -238,9 +246,11 @@ export class EngineerMissionFactory {
 
     maybeCreateMissions(context: SupabotContext, missionController: MissionController, logger: DebugLogger): void {
         const { game } = context;
-        const playerData = game.getPlayerData(context.player.name);
         const savage = context.botProfile?.id === "savage";
-        const interval = savage ? Math.floor(CHECK_INTERVAL_TICKS * 0.65) : CHECK_INTERVAL_TICKS;
+        const attacksActive = savage && hasActiveAttackMissions(context, missionController);
+        const interval = savage
+            ? Math.floor(CHECK_INTERVAL_TICKS * (attacksActive ? 0.35 : 0.65))
+            : CHECK_INTERVAL_TICKS;
         if (!(game.getCurrentTick() > this.lastCheckAt + interval)) {
             return;
         }
@@ -249,7 +259,7 @@ export class EngineerMissionFactory {
         this.maybeCreateTechCaptures(context, missionController, logger);
 
         if (savage) {
-            this.maybeCreateBridgeRepairs(context, missionController, logger);
+            this.maybeCreateBridgeRepairs(context, missionController, logger, attacksActive);
             this.maybeCreateGarrisons(context, missionController, logger);
         }
     }
@@ -299,35 +309,56 @@ export class EngineerMissionFactory {
         context: SupabotContext,
         missionController: MissionController,
         logger: DebugLogger,
+        attacksActive: boolean,
     ): void {
-        const { game } = context;
+        const { game, matchAwareness } = context;
         const playerData = game.getPlayerData(context.player.name);
         const active = missionController.getMissions().filter((m) => m.getUniqueName().startsWith("bridge-"));
-        if (active.length >= 2) {
+        const maxActive = attacksActive ? 4 : 2;
+        if (active.length >= maxActive) {
             return;
         }
 
-        // Bridge repair huts (CabHut) — neutral buildings with BridgeRepairHut=yes.
-        // Only create missions when the associated bridge is actually destroyed.
+        const attackPoints = getActiveAttackRoutePoints(context, missionController);
+        const rallyPoint = matchAwareness.getMainRallyPoint();
+        const sectorCache = matchAwareness.getSectorCache();
+
         const hutIds = game.getVisibleUnits(
             playerData.name,
             "hostile",
             (r) => !!(r as { bridgeRepairHut?: boolean }).bridgeRepairHut,
         );
 
-        for (const hutId of hutIds) {
-            if (
-                (this.lostEngineerCounts[hutId] ?? 0) >= MAX_ATTEMPT_COUNT ||
-                (this.noPathCounts[hutId] ?? 0) >= MAX_ATTEMPT_COUNT
-            ) {
-                continue;
-            }
-            const hut = game.getUnitData(hutId);
-            if (!hut?.needsBridgeRepair) {
-                continue;
-            }
+        const candidates = hutIds
+            .map((hutId) => {
+                const hut = game.getUnitData(hutId);
+                if (!hut?.needsBridgeRepair || !hut.tile) {
+                    return null;
+                }
+                if (
+                    (this.lostEngineerCounts[hutId] ?? 0) >= MAX_ATTEMPT_COUNT ||
+                    (this.noPathCounts[hutId] ?? 0) >= MAX_ATTEMPT_COUNT
+                ) {
+                    return null;
+                }
+                const score =
+                    attackPoints.length > 0
+                        ? scoreBridgeHutForAttackRoute(hut, rallyPoint, attackPoints, sectorCache)
+                        : 0;
+                return { hutId, hut, score };
+            })
+            .filter(
+                (entry): entry is { hutId: number; hut: UnitData; score: number } => entry !== null,
+            )
+            .sort((a, b) => b.score - a.score);
+
+        for (const { hutId, hut, score } of candidates) {
+            const onAttackRoute = score >= ATTACK_PATH_BRIDGE_SCORE_THRESHOLD;
+            const priority = onAttackRoute
+                ? BRIDGE_REPAIR_ATTACK_PATH_PRIORITY
+                : getBridgeRepairPriorityForHut(hut, context, missionController);
             const added = missionController.addMission(
-                new EngineerMission("bridge-" + hutId, 105, hutId, 0, "repair_bridge", logger).withOnFinish(
+                new EngineerMission("bridge-" + hutId, priority, hutId, 0, "repair_bridge", logger).withOnFinish(
                     (_unitIds, reason) => {
                         if (reason === LOST_ENGINEER) {
                             this.lostEngineerCounts[hutId] = (this.lostEngineerCounts[hutId] ?? 0) + 1;
@@ -338,7 +369,11 @@ export class EngineerMissionFactory {
                 ),
             );
             if (added) {
-                logger(`Created bridge-repair mission for hut ${hutId}`);
+                logger(
+                    onAttackRoute
+                        ? `Created attack-route bridge repair for hut ${hutId} (score ${Math.round(score)})`
+                        : `Created bridge-repair mission for hut ${hutId}`,
+                );
                 break;
             }
         }
@@ -352,9 +387,12 @@ export class EngineerMissionFactory {
         const { game } = context;
         const playerData = game.getPlayerData(context.player.name);
         const active = missionController.getMissions().filter((m) => m.getUniqueName().startsWith("garrison-"));
-        if (active.length >= 2) {
+        if (active.length >= 6) {
             return;
         }
+
+        const baseCenter = playerData.startLocation;
+        const maxDistanceFromBase = 22;
 
         // Civilian / empty buildings that can be occupied (CanBeOccupied).
         const buildings = game.getVisibleUnits(
@@ -363,10 +401,24 @@ export class EngineerMissionFactory {
             (r) => !!(r as { canBeOccupied?: boolean }).canBeOccupied,
         );
 
-        for (const buildingId of buildings) {
-            const data = game.getUnitData(buildingId);
+        const sorted = buildings
+            .map((buildingId) => {
+                const data = game.getUnitData(buildingId);
+                if (!data?.tile) {
+                    return null;
+                }
+                const dist = baseCenter.distanceTo(new Vector2(data.tile.rx, data.tile.ry));
+                return { buildingId, data, dist };
+            })
+            .filter((entry): entry is { buildingId: number; data: NonNullable<ReturnType<typeof game.getUnitData>>; dist: number } => !!entry)
+            .sort((a, b) => a.dist - b.dist);
+
+        for (const { buildingId, data, dist } of sorted) {
+            if (dist > maxDistanceFromBase) {
+                continue;
+            }
             // Skip owned, enemy-garrisoned, or full buildings.
-            if (!data || data.owner === playerData.name) {
+            if (data.owner === playerData.name) {
                 continue;
             }
             const occupied = data.garrisonUnitCount ?? 0;
@@ -374,11 +426,12 @@ export class EngineerMissionFactory {
             if (occupied > 0 || (max > 0 && occupied >= max)) {
                 continue;
             }
+            const squadSize = dist <= 12 ? 4 : 3;
             const added = missionController.addMission(
-                new GarrisonMission("garrison-" + buildingId, 70, buildingId, 3, logger),
+                new GarrisonMission("garrison-" + buildingId, 70, buildingId, squadSize, logger),
             );
             if (added) {
-                logger(`Created garrison mission for building ${buildingId}`);
+                logger(`Created garrison mission for building ${buildingId} (${Math.round(dist)} tiles from base)`);
                 break;
             }
         }

@@ -8,7 +8,8 @@ import {
     DEFAULT_BUILDING_PRIORITY,
     getDefaultPlacementLocation,
 } from "../../building/buildingRules";
-import { applySavageStructurePriority } from "../../building/savageBuildingPolicy";
+import { applySavageStructurePriority, isSavageStaticDefence } from "../../building/savageBuildingPolicy";
+import { getSavageStaticDefencePlacement } from "../../building/common";
 import { queueTypeToName } from "../../building/queueController";
 
 // Legacy mission encompassing the old "build queue" logic.
@@ -43,7 +44,7 @@ export class BaseBuildingMission extends Mission {
             return noop();
         }
 
-        const bestLocation = this.getBestLocationForStructure(game, playerData, bestOption.option);
+        const bestLocation = this.getBestLocationForStructure(game, playerData, bestOption.option, context);
 
         if (!bestLocation) {
             return noop();
@@ -68,9 +69,8 @@ export class BaseBuildingMission extends Mission {
         context: MissionContext,
     ) {
         if (BUILDING_NAME_TO_RULES.has(option.name)) {
-            // Naval yards stay disabled unless the difficulty profile opts in (Savage).
-            if (option.name === "GAYARD" || option.name === "NAYARD") {
-                return context.botProfile?.enableNavy ? 9 : 0;
+            if ((option.name === "GAYARD" || option.name === "NAYARD") && !context.botProfile?.enableNavy) {
+                return 0;
             }
             let logic = BUILDING_NAME_TO_RULES.get(option.name)!;
             let priority = logic.getPriority(game, playerStatus, option, threatCache);
@@ -90,8 +90,15 @@ export class BaseBuildingMission extends Mission {
         game: GameApi,
         playerData: PlayerData,
         objectReady: TechnoRules,
+        context: MissionContext,
     ): { rx: number; ry: number } | undefined {
         if (BUILDING_NAME_TO_RULES.has(objectReady.name)) {
+            if (context.botProfile?.fortifyBase && isSavageStaticDefence(objectReady.name)) {
+                const savageLocation = getSavageStaticDefencePlacement(game, playerData, objectReady);
+                if (savageLocation) {
+                    return savageLocation;
+                }
+            }
             let logic = BUILDING_NAME_TO_RULES.get(objectReady.name)!;
             return logic.getPlacementLocation(game, playerData, objectReady);
         } else {

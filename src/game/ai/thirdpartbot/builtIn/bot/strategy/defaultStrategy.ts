@@ -4,17 +4,22 @@ import { ScoutingMissionFactory } from "../logic/mission/missions/scoutingMissio
 import { AttackMissionFactory } from "../logic/mission/missions/attackMission";
 import { DefenceMissionFactory } from "../logic/mission/missions/defenceMission";
 import { EngineerMissionFactory } from "../logic/mission/missions/engineerMission";
+import { BaseGuardMissionFactory } from "../logic/mission/missions/baseGuardMission";
+import { McvReserveMissionFactory } from "../logic/mission/missions/mcvReserveMissionFactory";
 import { SpyMissionFactory } from "../logic/mission/missions/spyMission";
 import { SupabotContext } from "../logic/common/context";
 import { MissionController } from "../logic/mission/missionController";
 import { DebugLogger } from "../logic/common/utils";
 import { Compositions, getValidCompositions, SideComposition } from "./compositionUtils";
+import { countNavalYards } from "../logic/building/navalYardBuilding";
 import {
     SIMPLE_BOT_PROFILE,
     scaleCompositionCounts,
+    scaleHarassComposition,
     type BotDifficultyProfile,
 } from "../BotDifficultyProfile";
 import type { GlobalThreat } from "../logic/threat/threat";
+import { AttackWaveKind, AttackWavePlanner } from "./attackWavePlanner";
 
 const DEFAULT_COMPOSITIONS: Compositions = {
     conscripts: {
@@ -78,16 +83,43 @@ const DEFAULT_COMPOSITIONS: Compositions = {
         minimumUnits: 3,
         maximumUnits: 12,
     },
-    // Naval (Savage + naval yard).
+    // Naval — basic ships (no tech beyond naval yard).
     sovietNavy: {
-        composition: { SUB: 2, DRED: 1, HYD: 2 },
+        composition: { SUB: 4 },
         minimumUnits: 2,
         maximumUnits: 8,
     },
     alliedNavy: {
-        composition: { DEST: 2, AEGIS: 1, DLPH: 2 },
+        composition: { DEST: 4 },
         minimumUnits: 2,
         maximumUnits: 8,
+    },
+    // Naval — mid tier (radar): escort / anti-air on water.
+    sovietNavyEscort: {
+        composition: { HYD: 3, SUB: 2 },
+        minimumUnits: 3,
+        maximumUnits: 10,
+    },
+    alliedNavyEscort: {
+        composition: { AEGIS: 2, DEST: 3 },
+        minimumUnits: 3,
+        maximumUnits: 10,
+    },
+    // Naval — late tier (battle lab): heavy bombardment & carrier groups.
+    sovietNavyHeavy: {
+        composition: { DRED: 2, SUB: 2 },
+        minimumUnits: 3,
+        maximumUnits: 8,
+    },
+    alliedNavyHeavy: {
+        composition: { CARRIER: 1, AEGIS: 2, DEST: 2 },
+        minimumUnits: 4,
+        maximumUnits: 10,
+    },
+    alliedNavyDolphins: {
+        composition: { DLPH: 4, DEST: 2 },
+        minimumUnits: 3,
+        maximumUnits: 10,
     },
     // Mixed air assault.
     sovietAirAssault: {
@@ -156,7 +188,17 @@ const AIR_ASSAULT_COMPOSITIONS = new Set([
     "rocketeers",
     "blackEagles",
 ]);
-const NAVY_COMPOSITIONS = new Set(["sovietNavy", "alliedNavy"]);
+const BASIC_NAVY_COMPOSITIONS = new Set(["sovietNavy", "alliedNavy"]);
+const ADVANCED_NAVY_COMPOSITIONS = new Set([
+    "sovietNavyEscort",
+    "alliedNavyEscort",
+    "sovietNavyHeavy",
+    "alliedNavyHeavy",
+    "alliedNavyDolphins",
+]);
+const NAVY_AA_ESCORT_COMPOSITIONS = new Set(["sovietNavyEscort", "alliedNavyEscort"]);
+const NAVY_HEAVY_COMPOSITIONS = new Set(["sovietNavyHeavy", "alliedNavyHeavy"]);
+const NAVY_COMPOSITIONS = new Set([...BASIC_NAVY_COMPOSITIONS, ...ADVANCED_NAVY_COMPOSITIONS]);
 const SPECIALIST_COMPOSITIONS = new Set([
     "tanyaRaid",
     "sniperSquad",
@@ -164,6 +206,23 @@ const SPECIALIST_COMPOSITIONS = new Set([
     "yuriStrike",
     "ivanSabotage",
     "desolatorPush",
+]);
+/** Small elite / air raids — do not apply mass-wave minimums. */
+const SMALL_WAVE_COMPOSITIONS = new Set([...SPECIALIST_COMPOSITIONS, "kirovs", "blackEagles"]);
+/** Compositions suited to fast, small harassment raids. */
+const HARASS_COMPOSITIONS = new Set([
+    "conscripts",
+    "gis",
+    "rocketeers",
+    "sovietTanks",
+    "alliedTanks",
+    "sealTeam",
+    "sniperSquad",
+    "ivanSabotage",
+    "alliedAirAssault",
+    "blackEagles",
+    "sovietNavy",
+    "alliedNavy",
 ]);
 const ARTILLERY_COMPOSITIONS = new Set(["sovietArtillery", "alliedArtillery"]);
 
@@ -173,7 +232,10 @@ export class DefaultStrategy implements Strategy {
     private attackFactory: AttackMissionFactory;
     private defenceFactory = new DefenceMissionFactory();
     private engineerFactory = new EngineerMissionFactory();
+    private baseGuardFactory = new BaseGuardMissionFactory();
+    private mcvReserveFactory = new McvReserveMissionFactory();
     private spyFactory = new SpyMissionFactory();
+    private wavePlanner = new AttackWavePlanner();
 
     constructor(private profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
         this.expansionFactory = new ExpansionMissionFactory(
@@ -186,6 +248,7 @@ export class DefaultStrategy implements Strategy {
             profile.visibleAttackCooldownTicks,
             profile.baseAttackCooldownTicks,
             profile.maxPreparingAttacks,
+            this.wavePlanner,
         );
     }
 
@@ -196,21 +259,26 @@ export class DefaultStrategy implements Strategy {
         }
 
         this.expansionFactory.maybeCreateMissions(context, missionController, logger);
+        this.mcvReserveFactory.maybeCreateMissions(context, missionController, logger);
         this.scoutingFactory.maybeCreateMissions(context, missionController, logger);
 
-        const composition = this.selectAttackComposition(context, logger);
-        if (composition) {
-            this.attackFactory.maybeCreateMissions(context, missionController, logger, composition);
-        }
+        this.attackFactory.maybeCreateMissions(context, missionController, logger, (wave) =>
+            this.selectAttackComposition(context, logger, wave),
+        );
 
         this.defenceFactory.maybeCreateMissions(context, missionController, logger);
+        this.baseGuardFactory.maybeCreateMissions(context, missionController, logger);
         this.engineerFactory.maybeCreateMissions(context, missionController, logger);
         this.spyFactory.maybeCreateMissions(context, missionController, logger);
 
         return this;
     }
 
-    private selectAttackComposition(context: SupabotContext, logger: DebugLogger): SideComposition | null {
+    private selectAttackComposition(
+        context: SupabotContext,
+        logger: DebugLogger,
+        wave: AttackWaveKind,
+    ): SideComposition | null {
         const playerData = context.game.getPlayerData(context.player.name);
         const side = playerData.country?.side;
         if (side === undefined) {
@@ -226,6 +294,9 @@ export class DefaultStrategy implements Strategy {
         if (!this.profile.enableNavy) {
             candidates = candidates.filter((id) => !NAVY_COMPOSITIONS.has(id));
         }
+        else if (countNavalYards(context.game, playerData) === 0) {
+            candidates = candidates.filter((id) => !NAVY_COMPOSITIONS.has(id));
+        }
         if (!this.profile.useSpecialists) {
             candidates = candidates.filter((id) => !SPECIALIST_COMPOSITIONS.has(id));
         }
@@ -234,16 +305,37 @@ export class DefaultStrategy implements Strategy {
             return null;
         }
 
+        if (wave === "harass") {
+            const harassPool = candidates.filter((id) => HARASS_COMPOSITIONS.has(id));
+            if (harassPool.length > 0) {
+                candidates = harassPool;
+            }
+        }
+
         let chosenId: string;
         if (this.profile.counterCompositions) {
-            chosenId = this.selectCounterComposition(context, candidates, logger);
+            chosenId = this.selectCounterComposition(context, candidates, logger, wave);
         } else {
             const randomIndex = context.game.generateRandomInt(0, candidates.length - 1);
             chosenId = candidates[randomIndex];
         }
 
-        logger(`Attack composition: ${chosenId} (from ${candidates.join(", ")})`);
-        return scaleCompositionCounts(DEFAULT_COMPOSITIONS[chosenId], this.profile.compositionSizeMultiplier);
+        const base = DEFAULT_COMPOSITIONS[chosenId];
+        if (wave === "harass" && this.profile.alternateAttackWaves) {
+            logger(`Attack composition (harass): ${chosenId}`);
+            return scaleHarassComposition(
+                base,
+                this.profile.harassWaveUnits ?? 4,
+                this.profile.harassWaveMaxUnits ?? 6,
+            );
+        }
+
+        logger(`Attack composition (assault): ${chosenId} (from ${candidates.join(", ")})`);
+        const minWave =
+            this.profile.batchAttacks && !SMALL_WAVE_COMPOSITIONS.has(chosenId)
+                ? this.profile.minAttackWaveUnits
+                : undefined;
+        return scaleCompositionCounts(base, this.profile.compositionSizeMultiplier, minWave);
     }
 
     /**
@@ -254,9 +346,10 @@ export class DefaultStrategy implements Strategy {
         context: SupabotContext,
         candidates: string[],
         logger: DebugLogger,
+        wave: AttackWaveKind,
     ): string {
         const threat = context.matchAwareness.getThreatCache();
-        const preferred = this.rankCompositions(candidates, threat);
+        const preferred = this.rankCompositions(candidates, threat, wave);
         if (preferred.length === 0) {
             return candidates[context.game.generateRandomInt(0, candidates.length - 1)];
         }
@@ -272,9 +365,20 @@ export class DefaultStrategy implements Strategy {
         return pick;
     }
 
-    private rankCompositions(candidates: string[], threat: GlobalThreat | null): string[] {
+    private rankCompositions(candidates: string[], threat: GlobalThreat | null, wave: AttackWaveKind): string[] {
         const scored = candidates.map((id) => {
             let score = 1;
+            if (wave === "harass") {
+                if (HARASS_COMPOSITIONS.has(id)) {
+                    score += 5;
+                }
+                if (id === "conscripts" || id === "gis" || id === "rocketeers") {
+                    score += 3;
+                }
+                if (SPECIALIST_COMPOSITIONS.has(id)) {
+                    score += 4;
+                }
+            }
             if (!threat) {
                 if (this.profile.useSpecialists && SPECIALIST_COMPOSITIONS.has(id)) score += 4;
                 if (this.profile.boostAir && AIR_ASSAULT_COMPOSITIONS.has(id)) score += 3;
@@ -299,6 +403,21 @@ export class DefaultStrategy implements Strategy {
             }
             if (this.profile.enableNavy && NAVY_COMPOSITIONS.has(id)) {
                 score += 4;
+                if (ADVANCED_NAVY_COMPOSITIONS.has(id)) {
+                    score += 7;
+                }
+                if (NAVY_AA_ESCORT_COMPOSITIONS.has(id) && airThreat > groundThreat * 0.65 && airThreat > 35) {
+                    score += 6;
+                }
+                if (NAVY_HEAVY_COMPOSITIONS.has(id) && groundThreat > 40) {
+                    score += 5;
+                }
+                if (id === "alliedNavyDolphins" && enemyAa < 50) {
+                    score += 4;
+                }
+                if (BASIC_NAVY_COMPOSITIONS.has(id) && candidates.some((c) => ADVANCED_NAVY_COMPOSITIONS.has(c))) {
+                    score -= 4;
+                }
             }
             if (this.profile.boostAir) {
                 if (AIR_ASSAULT_COMPOSITIONS.has(id)) score += 4;
