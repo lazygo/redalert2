@@ -51,16 +51,25 @@ export class OccupyOrder extends Order {
                 !this.sourceObject.veteranTrait.isMaxLevel();
         }
         if (this.target.obj.garrisonTrait) {
-            return this.target.obj.garrisonTrait.canBeOccupied() &&
+            if (this.target.obj.garrisonTrait.canBeOccupied() &&
                 this.sourceObject.rules.occupier &&
                 !(this.target.obj.garrisonTrait.units.length &&
                     this.target.obj.garrisonTrait.units[0].owner !== this.sourceObject.owner) &&
                 !this.sourceObject.mindControllableTrait?.isActive() &&
-                !this.sourceObject.mindControllerTrait?.isActive();
+                !this.sourceObject.mindControllerTrait?.isActive()) {
+                this.feedbackType = OrderFeedbackType.Garrison;
+                return true;
+            }
+            return false;
         }
-        return !!(this.target.obj.rules.spyable &&
+        if (this.target.obj.rules.spyable &&
             this.sourceObject.rules.infiltrate &&
-            !this.game.areFriendly(this.sourceObject, this.target.obj));
+            !this.game.areFriendly(this.sourceObject, this.target.obj)) {
+            this.feedbackType = OrderFeedbackType.SpecialAttack;
+            return true;
+        }
+        this.feedbackType = OrderFeedbackType.Capture;
+        return false;
     }
     private isUnitRecycle(unit: any, building: any): boolean {
         return unit.owner === building.owner &&

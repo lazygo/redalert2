@@ -9,6 +9,10 @@ import { RadarEventType } from '@/game/rules/general/RadarRules';
 import { OrderFeedbackType } from '@/game/order/OrderFeedbackType';
 import { QueueStatus } from '@/game/player/production/ProductionQueue';
 import { ObjectType } from '@/engine/type/ObjectType';
+import { BuildStatus } from '@/game/gameobject/Building';
+
+/** Minimum ms between repeated EVA_InsufficientFunds announcements. */
+const INSUFFICIENT_FUNDS_EVA_COOLDOWN_MS = 8000;
 
 const detectedSuperWeaponEvaByType = new Map([
     [SuperWeaponType.MultiMissile, 'EVA_NuclearSiloDetected'],
@@ -63,6 +67,7 @@ export class SoundHandler {
     private triggerSoundHandles = new Map();
     private disposables = new CompositeDisposable();
     private lastFeedbackTime?: number;
+    private lastInsufficientFundsEvaTime?: number;
     constructor(private game: any, private worldSound: any, private eva: any, private sound: any, private gameEvents: any, private messageList: any, private strings: any, private player: any) { }
     init(): void {
         this.disposables.add(this.gameEvents.subscribe((event: any) => this.handleGameEvent(event)));
@@ -121,6 +126,21 @@ export class SoundHandler {
                 break;
             case EventType.CratePickup:
                 this.handleCratePickupSound(event);
+                break;
+            case EventType.InsufficientFunds:
+                this.handleInsufficientFundsSound(event);
+                break;
+            case EventType.PowerLow:
+                this.handlePowerLowSound(event);
+                break;
+            case EventType.BuildingRepairStart:
+                this.handleBuildingRepairStartSound(event);
+                break;
+            case EventType.BuildingInfiltration:
+                this.handleBuildingInfiltrationSound(event);
+                break;
+            case EventType.BuildStatusChange:
+                this.handleBuildStatusChangeSound(event);
                 break;
             default:
                 break;
@@ -254,6 +274,47 @@ export class SoundHandler {
             this.eva.play('EVA_UnitPromoted', true);
         }
     }
+    private handleInsufficientFundsSound(event: any): void {
+        if (event.target !== this.player) {
+            return;
+        }
+        const now = Date.now();
+        if (this.lastInsufficientFundsEvaTime && now - this.lastInsufficientFundsEvaTime < INSUFFICIENT_FUNDS_EVA_COOLDOWN_MS) {
+            return;
+        }
+        this.lastInsufficientFundsEvaTime = now;
+        this.eva.play('EVA_InsufficientFunds');
+    }
+    private handlePowerLowSound(event: any): void {
+        if (event.target === this.player) {
+            this.eva.play('EVA_LowPower');
+        }
+    }
+    private handleBuildingRepairStartSound(event: any): void {
+        if (event.target?.owner === this.player) {
+            this.eva.play('EVA_Repairing');
+        }
+    }
+    private handleBuildingInfiltrationSound(event: any): void {
+        if (event.target?.owner !== this.player) {
+            return;
+        }
+        if (event.target.rules?.power > 0) {
+            this.eva.play('EVA_PowerSabotaged');
+        }
+    }
+    private handleBuildStatusChangeSound(event: any): void {
+        if (event.target?.owner !== this.player || !event.target.isBuilding?.()) {
+            return;
+        }
+        const previous = event.target.lastBuildStatus;
+        if (event.status === BuildStatus.BuildUp && previous !== BuildStatus.BuildUp) {
+            this.eva.play('EVA_Building');
+        }
+        else if (event.status === BuildStatus.Ready && previous === BuildStatus.BuildUp) {
+            this.eva.play('EVA_ConstructionComplete');
+        }
+    }
     private handleCratePickupSound(event: any): void {
         const crateType = event.target?.type;
         let sound = crateSoundByType.get(crateType);
@@ -305,6 +366,8 @@ export class SoundHandler {
                 return 'EVA_NewRallyPointEstablished';
             case OrderFeedbackType.SelectTarget:
                 return 'EVA_SelectTarget';
+            case OrderFeedbackType.Garrison:
+                return 'EVA_StructureGarrisoned';
             default:
                 return undefined;
         }
@@ -341,19 +404,43 @@ export class SoundHandler {
             return;
         }
         const previousStatus = this.lastQueueStatuses.get(queue.type);
-        this.lastQueueStatuses.set(queue.type, queue.status);
-        if (previousStatus === queue.status || queue.status !== QueueStatus.Ready) {
+        const currentStatus = queue.status;
+        this.lastQueueStatuses.set(queue.type, currentStatus);
+        if (previousStatus === currentStatus) {
             return;
         }
+
         const item = queue.getFirst();
-        if (!item) {
+
+        if (currentStatus === QueueStatus.OnHold && previousStatus !== undefined) {
+            this.eva.play('EVA_OnHold');
             return;
         }
+
+        if (
+            currentStatus === QueueStatus.Active &&
+            (previousStatus === QueueStatus.Idle || previousStatus === undefined) &&
+            item
+        ) {
+            if (item.rules.type === ObjectType.Building) {
+                this.eva.play('EVA_Building');
+            }
+            else if (item.rules.type === ObjectType.Infantry) {
+                this.eva.play('EVA_Training');
+            }
+            return;
+        }
+
+        if (currentStatus !== QueueStatus.Ready || !item) {
+            return;
+        }
+
+        // Buildings finish on the map (BuildStatusChange); queue Ready only means paid.
         if (item.rules.type === ObjectType.Building) {
-            this.eva.play('EVA_ConstructionComplete');
             return;
         }
-        let readySound: SoundKey | undefined;
+
+        let readySound: SoundKey;
         if (item.rules.type === ObjectType.Infantry) {
             readySound = SoundKey.CreateInfantrySound;
         }
@@ -364,7 +451,7 @@ export class SoundHandler {
             readySound = SoundKey.CreateUnitSound;
         }
         this.sound.play(readySound, ChannelType.Effect);
-        this.eva.play(item.rules.type === ObjectType.Infantry ? 'EVA_Training' : 'EVA_UnitReady');
+        this.eva.play('EVA_UnitReady');
     }
     handleSelectionChangeEvent(event: any): void {
         if (event.selection.length && event.selection[0].owner === this.player) {

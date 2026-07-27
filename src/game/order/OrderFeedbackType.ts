@@ -9,4 +9,6 @@ export enum OrderFeedbackType {
     RallyPoint = 6,
     /** Fighter aircraft acquiring a target (EVA Select Target). */
     SelectTarget = 7,
+    /** Infantry entering a garrisonable structure (EVA). */
+    Garrison = 8,
 }
