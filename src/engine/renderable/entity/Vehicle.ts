@@ -346,38 +346,15 @@ export class Vehicle {
                 }),
                 this.placeholder?.setOpacity(t);
         }
-        if ((t || a || s || n) &&
-            (n && this.highlightAnimRunner.tick(i),
-                (p = s ? this.invulnAnimRunner.getValue() : 0),
-                (P = (n ? this.highlightAnimRunner.getValue() : 0) || p),
-                A.ExtraLightHelper.multiplyVxl(this.vxlExtraLight, this.baseVxlExtraLight, this.lighting.getAmbientIntensity(), P as any),
-                A.ExtraLightHelper.multiplyShp(this.shpExtraLight, this.baseShpExtraLight, P as any),
-            this.gameObject.isDestroyed && this.resolveObjectRemove)) {
-            if ((this.squidGrabAnim &&
-                (this.posObj?.remove(this.squidGrabAnim.get3DObject()),
-                    this.squidGrabAnim.dispose(),
-                    (this.squidGrabAnim = void 0)),
-                this.destroyStartTime || (this.destroyStartTime = i),
-                this.isSinker())) {
-                var d: any = (i - this.destroyStartTime) / 3e3, g: any = 1 <= d;
-                g
-                    ? (this.mainObj.visible = !1)
-                    : (this.objectRules.naval &&
-                        (this.mainObj.rotation.x = (Math.PI / 4) * d),
-                        (this.mainObj.position.y =
-                            -16 * S.Coords.ISO_WORLD_SCALE * d),
-                        (this.mainObj.position.z =
-                            8 * S.Coords.ISO_WORLD_SCALE * d),
-                        this.mainObj.updateMatrix());
-                let e = !1;
-                this.sinkWakeAnims.forEach((e) => e.update(i)),
-                    this.sinkWakeAnims.filter((e) => !e.isAnimFinished())
-                        .length ||
-                        (this.sinkWakeAnims.forEach((e) => this.get3DObject().remove(e.get3DObject())),
-                            (this.sinkWakeAnims.length = 0),
-                            (e = !0)),
-                    g && e && this.resolveObjectRemove();
-            }
+        if (this.gameObject.isDestroyed && this.resolveObjectRemove) {
+            this.updateSinkAnimation(i);
+        }
+        if (t || a || s || n) {
+            n && this.highlightAnimRunner.tick(i);
+            const invulnHighlight = s ? this.invulnAnimRunner.getValue() : 0;
+            const highlight = (n ? this.highlightAnimRunner.getValue() : 0) || invulnHighlight;
+            A.ExtraLightHelper.multiplyVxl(this.vxlExtraLight, this.baseVxlExtraLight, this.lighting.getAmbientIntensity(), highlight as any);
+            A.ExtraLightHelper.multiplyShp(this.shpExtraLight, this.baseShpExtraLight, highlight as any);
         }
         else if (!this.gameObject.warpedOutTrait.isActive()) {
             let e = (Math.floor(this.gameObject.direction +
@@ -848,6 +825,40 @@ export class Vehicle {
     isSinker() {
         return (this.gameObject.zone === M.ZoneType.Water &&
             this.gameObject.isSinker);
+    }
+    updateSinkAnimation(timestamp: number): void {
+        if (!this.resolveObjectRemove || !this.isSinker()) {
+            return;
+        }
+        if (this.squidGrabAnim) {
+            this.posObj?.remove(this.squidGrabAnim.get3DObject());
+            this.squidGrabAnim.dispose();
+            this.squidGrabAnim = void 0;
+        }
+        this.destroyStartTime ??= timestamp;
+        const progress = (timestamp - this.destroyStartTime) / 3e3;
+        const sinkComplete = progress >= 1;
+        if (sinkComplete) {
+            this.mainObj.visible = false;
+        }
+        else {
+            if (this.objectRules.naval) {
+                this.mainObj.rotation.x = (Math.PI / 4) * progress;
+            }
+            this.mainObj.position.y = -16 * S.Coords.ISO_WORLD_SCALE * progress;
+            this.mainObj.position.z = 8 * S.Coords.ISO_WORLD_SCALE * progress;
+            this.mainObj.updateMatrix();
+        }
+        let wakeAnimsDone = false;
+        this.sinkWakeAnims.forEach((anim) => anim.update(timestamp));
+        if (!this.sinkWakeAnims.filter((anim) => !anim.isAnimFinished()).length) {
+            this.sinkWakeAnims.forEach((anim) => this.get3DObject().remove(anim.get3DObject()));
+            this.sinkWakeAnims.length = 0;
+            wakeAnimsDone = true;
+        }
+        if (sinkComplete && wakeAnimsDone) {
+            this.resolveObjectRemove();
+        }
     }
     onCreate(t) {
         (this.renderableManager = t),
