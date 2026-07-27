@@ -271,7 +271,16 @@ export class DefaultStrategy implements Strategy {
             (context as { botProfile?: BotDifficultyProfile }).botProfile = this.profile;
         }
 
-        this.focusPlanner.onTick(context, missionController);
+        const safe = (label: string, fn: () => void) => {
+            try {
+                fn();
+            } catch (err) {
+                logger(`${label} failed: ${err}`, false);
+                console.error(`[BuiltInBot strategy] ${label}:`, err);
+            }
+        };
+
+        safe("focusPlanner", () => this.focusPlanner.onTick(context, missionController));
 
         const tick = context.game.getCurrentTick();
         if (this.profile.grandAssaultMode && tick > this.lastGrandDebugAt + 15 * 30) {
@@ -279,20 +288,22 @@ export class DefaultStrategy implements Strategy {
             logger(this.grandAssaultPlanner.getDebugProgress(context), false);
         }
 
-        this.expansionFactory.maybeCreateMissions(context, missionController, logger);
-        this.mcvReserveFactory.maybeCreateMissions(context, missionController, logger);
-        this.scoutingFactory.maybeCreateMissions(context, missionController, logger);
-        this.engineerFactory.maybeCreateMissions(context, missionController, logger);
-        this.harvesterHarassFactory.maybeCreateMissions(context, missionController, logger);
-
-        this.attackFactory.maybeCreateMissions(context, missionController, logger, (wave) =>
-            this.selectAttackComposition(context, logger, wave),
+        safe("expansion", () => this.expansionFactory.maybeCreateMissions(context, missionController, logger));
+        safe("mcvReserve", () => this.mcvReserveFactory.maybeCreateMissions(context, missionController, logger));
+        safe("scouting", () => this.scoutingFactory.maybeCreateMissions(context, missionController, logger));
+        safe("engineer", () => this.engineerFactory.maybeCreateMissions(context, missionController, logger));
+        safe("harvesterHarass", () =>
+            this.harvesterHarassFactory.maybeCreateMissions(context, missionController, logger),
         );
-
-        this.defenceFactory.maybeCreateMissions(context, missionController, logger);
-        this.baseGuardFactory.maybeCreateMissions(context, missionController, logger);
-        this.dogPatrolFactory.maybeCreateMissions(context, missionController, logger);
-        this.spyFactory.maybeCreateMissions(context, missionController, logger);
+        safe("attack", () =>
+            this.attackFactory.maybeCreateMissions(context, missionController, logger, (wave) =>
+                this.selectAttackComposition(context, logger, wave),
+            ),
+        );
+        safe("defence", () => this.defenceFactory.maybeCreateMissions(context, missionController, logger));
+        safe("baseGuard", () => this.baseGuardFactory.maybeCreateMissions(context, missionController, logger));
+        safe("dogPatrol", () => this.dogPatrolFactory.maybeCreateMissions(context, missionController, logger));
+        safe("spy", () => this.spyFactory.maybeCreateMissions(context, missionController, logger));
 
         return this;
     }

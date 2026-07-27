@@ -78,11 +78,20 @@ export class MissionController {
             actionBatcher,
         } satisfies MissionContext;
 
-        // Poll missions for requested actions.
-        const missionActions: MissionWithAction<any>[] = this.missions.map((mission) => ({
-            mission,
-            action: mission.onAiUpdate(missionContext),
-        }));
+        // Poll missions for requested actions — isolate failures so one bad mission
+        // cannot freeze the entire bot (building, attacks, expansion).
+        const missionActions: MissionWithAction<any>[] = [];
+        for (const mission of this.missions) {
+            try {
+                missionActions.push({
+                    mission,
+                    action: mission.onAiUpdate(missionContext),
+                });
+            } catch (err) {
+                this.logger(`Mission ${mission.getUniqueName()} threw: ${err}`);
+                missionActions.push({ mission, action: { type: "noop" } });
+            }
+        }
 
         // Handle disbands and merges.
         const disbandedMissions: Map<string, any> = new Map();

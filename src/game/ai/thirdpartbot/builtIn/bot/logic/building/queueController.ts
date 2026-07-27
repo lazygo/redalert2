@@ -74,20 +74,28 @@ export class QueueController {
         const playerData = game.getPlayerData(player.name);
         this.queueStates = QUEUES.map((queueType) => {
             const options = productionApi.getAvailableObjects(queueType);
-            const items = QueueController.getPrioritiesForBuildingOptions(options, unitTypeRequests);
+            // Only score units actually available in this queue. A high-priority request
+            // for something locked (e.g. MCV before war factory) must not pause other queues.
+            const queueRequests = new Map<string, UnitRequest>();
+            for (const option of options) {
+                const req = unitTypeRequests.get(option.name);
+                if (req && req.priority > 0) {
+                    queueRequests.set(option.name, req);
+                }
+            }
+            const items = QueueController.getPrioritiesForBuildingOptions(options, queueRequests);
             const topItem = items.length > 0 ? items[items.length - 1] : undefined;
             return {
                 queue: queueType,
                 items,
-                // only if the top item has a  priority above zero
                 topItem: topItem && topItem.priority > 0 ? topItem : undefined,
             };
         });
         const totalWeightAcrossQueues = this.queueStates
-            .map((decision) => decision.topItem?.priority!)
+            .map((decision) => decision.topItem?.priority ?? 0)
             .reduce((pV, cV) => pV + cV, 0);
         const totalCostAcrossQueues = this.queueStates
-            .map((decision) => decision.topItem?.unit.cost!)
+            .map((decision) => decision.topItem?.unit.cost ?? 0)
             .reduce((pV, cV) => pV + cV, 0);
 
         this.queueStates.forEach((decision) => {
@@ -229,7 +237,12 @@ export class QueueController {
                 }
             } else {
                 // Not changing our mind, but maybe other queues are more important for now.
-                if (totalCostAcrossQueues > myCredits && decision.priority < totalWeightAcrossQueues * 0.25) {
+                // Never pause Structures — a stuck base build turns the AI into a wood post.
+                if (
+                    queueData.type !== QueueType.Structures &&
+                    totalCostAcrossQueues > myCredits &&
+                    decision.priority < totalWeightAcrossQueues * 0.25
+                ) {
                     logger(
                         `Pausing queue ${queueTypeToName(queueData.type)} because weight is low (${
                             decision.priority
@@ -239,15 +252,19 @@ export class QueueController {
                 }
             }
         } else if (queueData.status == QueueStatus.OnHold) {
-            // Consider resuming queue if priority is high relative to other queues.
-            if (myCredits >= totalCostAcrossQueues) {
-                logger(`Resuming queue ${queueTypeToName(queueData.type)} because credits are high`);
-                actionsApi.resumeProduction(queueData.type);
-            } else if (decision && decision.priority >= totalWeightAcrossQueues * 0.25) {
+            // Always resume Structures; other queues resume when affordable or high weight.
+            if (
+                queueData.type === QueueType.Structures ||
+                myCredits >= totalCostAcrossQueues ||
+                (decision && decision.priority >= totalWeightAcrossQueues * 0.25)
+            ) {
                 logger(
-                    `Resuming queue ${queueTypeToName(queueData.type)} because weight is high (${
-                        decision.priority
-                    }/${totalWeightAcrossQueues})`,
+                    `Resuming queue ${queueTypeToName(queueData.type)}` +
+                        (queueData.type === QueueType.Structures
+                            ? " (structures never stay paused)"
+                            : myCredits >= totalCostAcrossQueues
+                              ? " because credits are high"
+                              : ` because weight is high (${decision?.priority}/${totalWeightAcrossQueues})`),
                 );
                 actionsApi.resumeProduction(queueData.type);
             }

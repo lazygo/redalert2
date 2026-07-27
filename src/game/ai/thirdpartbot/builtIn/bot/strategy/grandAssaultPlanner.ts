@@ -2,8 +2,8 @@ import { SupabotContext } from "../logic/common/context";
 import { countConyards } from "../logic/mission/missions/mcvReserveMission";
 import { SideComposition } from "./compositionUtils";
 
-/** Expansion window after factorial threshold is met (~40s). */
-const EXPAND_WINDOW_TICKS = 15 * 40;
+/** Expansion window after factorial threshold is met (~90s — enough to produce+drive MCV). */
+const EXPAND_WINDOW_TICKS = 15 * 90;
 const MIN_ARMY_FOR_EXPAND = 8;
 const MIN_CREDITS_FOR_EXPAND = 5000;
 
@@ -67,8 +67,9 @@ export class GrandAssaultPlanner {
         return credits >= MIN_CREDITS_FOR_EXPAND;
     }
 
-    shouldPackConyardToExpand(context: SupabotContext): boolean {
-        return this.shouldInvestInExpansion(context);
+    shouldPackConyardToExpand(_context: SupabotContext): boolean {
+        // Savage expands via factory-built MCV only — packing the CY freezes tech production.
+        return false;
     }
 
     countCombatants(context: SupabotContext): number {

@@ -53,25 +53,28 @@ export class GameApi {
             throw new Error(`Player "${playerName2}" doesn't exist`);
         return this.game.alliances.areAllied(player1, player2);
     }
-    canPlaceBuilding(
-        playerName: string,
-        buildingType: string,
-        position: any,
-        options?: { ignoreAdjacent?: boolean; normalizedTile?: boolean; [key: string]: unknown },
-    ): boolean {
-        const player = this.game.getPlayerByName(playerName);
-        if (!player)
-            throw new Error(`Player "${playerName}" doesn't exist`);
-        const placeOptions = options ?? {};
-        if (placeOptions.ignoreAdjacent === undefined) {
-            placeOptions.ignoreAdjacent = this.rulesApi.getBuilding(buildingType).constructionYard;
+    canPlaceBuilding(playerName: string, arg2: any, arg3: any): boolean {
+        try {
+            const player = this.game.getPlayerByName(playerName);
+            if (!player) {
+                return false;
+            }
+            // Backward/forward compatible with both signatures:
+            // canPlaceBuilding(playerName, position, buildingType)
+            // canPlaceBuilding(playerName, buildingType, position)
+            const buildingType = typeof arg2 === "string" ? arg2 : arg3;
+            const position = typeof arg2 === "string" ? arg3 : arg2;
+            if (!buildingType || !position) {
+                return false;
+            }
+            const worker = this.game.constructionWorkers?.get(player);
+            if (!worker?.canPlaceAt) {
+                return false;
+            }
+            return !!worker.canPlaceAt(buildingType, position, { normalizedTile: true });
+        } catch {
+            return false;
         }
-        return this.game
-            .getConstructionWorker(player)
-            .canPlaceAt(buildingType, position, {
-                normalizedTile: true,
-                ...placeOptions,
-            });
     }
     getBuildingPlacementData(buildingType: string): BuildingPlacementData {
         const buildingData = this.game.art.getObject(buildingType, ObjectType.Building);
@@ -131,8 +134,11 @@ export class GameApi {
             .map((obj: any) => obj.id);
     }
     getNeutralUnits(filter: (rules: any) => boolean = () => true): any[] {
-        return this.game
-            .getCivilianPlayer()
+        const civilian = this.game.getCivilianPlayer?.();
+        if (!civilian?.getOwnedObjects) {
+            return [];
+        }
+        return civilian
             .getOwnedObjects()
             .filter((obj: any) => filter(obj.rules))
             .map((obj: any) => obj.id);

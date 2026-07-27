@@ -168,10 +168,15 @@ export class BuiltInBot extends Bot {
 
             const unitTypeRequests = this.missionController.getRequestedUnitTypes();
 
-            // Queue-controller logic.
-            this.queueController.onAiUpdate(fullContext, threatCache, unitTypeRequests, (message) =>
-                this.logBotStatus(message),
-            );
+            // Queue-controller logic — isolate so a placement/API error cannot freeze production.
+            try {
+                this.queueController.onAiUpdate(fullContext, threatCache, unitTypeRequests, (message) =>
+                    this.logBotStatus(message),
+                );
+            } catch (err) {
+                this.logger?.error?.("BuiltIn queue update failed", err);
+                console.error(`[BuiltInBot] "${this.name}" queue update error:`, err);
+            }
         }
     }
 

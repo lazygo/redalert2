@@ -1,16 +1,18 @@
-import { GameApi, GameObjectData, OrderType, SideType, SpeedType, Tile, UnitData, Vector2 } from "../../../../game-api";
+import { GameApi, OrderType, PlayerData, SideType, UnitData, Vector2 } from "../../../../game-api";
 import {
     Mission,
     MissionAction,
     disbandMission,
     noop,
+    requestSpecificUnits,
     requestUnitsWithSamePriority,
 } from "../mission";
 import { MissionController } from "../missionController";
-import { DebugLogger, toPathNode, toVector2 } from "../../common/utils";
-import { computeAdjacentRect, getAdjacentTiles } from "../../common/tileUtils";
+import { DebugLogger } from "../../common/utils";
+import { numBuildingsOwnedOfName } from "../../building/buildingRules";
 import { MissionContext, SupabotContext } from "../../common/context";
 import { UnitComposition } from "../../../strategy/strategy";
+import { isBrutalOrSavageProfile } from "../../../BotDifficultyProfile";
 import {
     ATTACK_PATH_BRIDGE_SCORE_THRESHOLD,
     BRIDGE_REPAIR_ATTACK_PATH_PRIORITY,
@@ -23,14 +25,15 @@ import {
 const ACTION_COOLDOWN_TICKS = 30;
 const CHECK_INTERVAL_TICKS = 120;
 const MAX_ATTEMPT_COUNT = 3;
-/** Give up only after this many ticks of unreachable target (not on first path check). */
-const NO_PATH_GIVE_UP_TICKS = 15 * 80;
 const MAX_CONCURRENT_CAPTURE_MISSIONS = 2;
 const SAVAGE_MAX_CONCURRENT_CAPTURE_MISSIONS = 3;
-/** Oil derrick — must beat bridge repair (105) so engineers are actually queued. */
-const OIL_DERRICK_CAPTURE_PRIORITY = 110;
+/** Above bridge attack-route repair (118) and spy (110) so engineers are actually queued for oil. */
+const OIL_DERRICK_CAPTURE_PRIORITY = 135;
 const TECH_CAPTURE_PRIORITY = 68;
 const DEFAULT_CAPTURE_PRIORITY = 52;
+const CAPTURE_PREPARE_TIMEOUT_TICKS = 15 * 75;
+
+const REFINERY_NAMES = ["GAREFN", "NAREFN"];
 
 enum EngineerMissionState {
     Preparing = 0,
@@ -48,7 +51,7 @@ const NO_PATH = "no_path";
 export class EngineerMission extends Mission {
     private state = EngineerMissionState.Preparing;
     private lastActionAttemptTick = -1;
-    private unreachableSinceTick: number | null = null;
+    private preparingSinceTick: number | null = null;
 
     constructor(
         uniqueName: string,
@@ -58,6 +61,7 @@ export class EngineerMission extends Mission {
         private kind: EngineerMissionKind,
         private skipEscort: boolean,
         logger: DebugLogger,
+        private readonly isOilCapture: boolean = false,
     ) {
         super(uniqueName, logger);
     }
@@ -66,7 +70,9 @@ export class EngineerMission extends Mission {
         const { game } = context;
         const actionsApi = context.player.actions;
         const playerData = game.getPlayerData(context.player.name);
-        const engineers = this.getUnitsOfTypes(game, "SENGINEER", "ENGINEER");
+        const side = playerData.country!.side;
+        const engineerTypes = side === SideType.Nod ? ["SENGINEER"] : ["ENGINEER"];
+        const engineers = this.getUnitsOfTypes(game, ...engineerTypes);
 
         const target = game.getGameObjectData(this.targetId);
         if (!target) {
@@ -89,31 +95,48 @@ export class EngineerMission extends Mission {
         }
 
         if (this.state === EngineerMissionState.Preparing) {
-            const composition: UnitComposition = {};
-            switch (playerData.country!.side) {
-                case SideType.Nod:
-                    composition["SENGINEER"] = 1;
-                    if (this.kind === "capture" && !this.skipEscort) {
-                        composition["DOG"] = Math.max(0, this.escortLevel - 1);
-                        composition["HTNK"] = Math.max(0, this.escortLevel - 2);
-                    }
-                    break;
-                case SideType.GDI:
-                    composition["ENGINEER"] = 1;
-                    if (this.kind === "capture" && !this.skipEscort) {
-                        composition["ADOG"] = Math.max(0, this.escortLevel - 1);
-                        composition["MTNK"] = Math.max(0, this.escortLevel - 2);
-                    }
-                    break;
+            const tick = game.getCurrentTick();
+            if (this.preparingSinceTick === null) {
+                this.preparingSinceTick = tick;
+            } else if (tick > this.preparingSinceTick + CAPTURE_PREPARE_TIMEOUT_TICKS) {
+                return disbandMission("prepare_timeout");
             }
-            const missingUnits = this.getMissingUnits(game, composition);
-            if (missingUnits.length > 0) {
-                return requestUnitsWithSamePriority(
-                    missingUnits.map(([unitName]) => unitName),
-                    this.priority,
+
+            const engineerPriority = this.isOilCapture ? this.priority + 8 : this.priority;
+            const escortPriority = this.isOilCapture ? Math.max(42, this.priority - 25) : this.priority;
+
+            if (engineers.length === 0) {
+                const idleEngineerId = findIdleEngineerId(game, playerData.name, engineerTypes[0]);
+                if (idleEngineerId !== null) {
+                    return requestSpecificUnits([idleEngineerId], engineerPriority);
+                }
+                return requestUnitsWithSamePriority(engineerTypes, engineerPriority);
+            }
+
+            // Oil: engineer moves immediately; escort is best-effort and never blocks capture.
+            if (this.isOilCapture) {
+                this.state = EngineerMissionState.Acting;
+            } else {
+                const composition = buildCaptureComposition(
+                    side,
+                    this.kind,
+                    this.skipEscort,
+                    this.escortLevel,
                 );
+                const missingUnits = this.getMissingUnits(game, composition);
+                if (missingUnits.length > 0) {
+                    const escortTypes = missingUnits
+                        .map(([unitName]) => unitName)
+                        .filter((name) => !engineerTypes.includes(name));
+                    if (missingUnits.some(([name]) => engineerTypes.includes(name))) {
+                        return requestUnitsWithSamePriority(engineerTypes, engineerPriority);
+                    }
+                    if (escortTypes.length > 0) {
+                        return requestUnitsWithSamePriority(escortTypes, escortPriority);
+                    }
+                }
+                this.state = EngineerMissionState.Acting;
             }
-            this.state = EngineerMissionState.Acting;
         }
 
         if (
@@ -122,42 +145,61 @@ export class EngineerMission extends Mission {
         ) {
             const engineer = engineers[0];
             if (!engineer) {
-                return requestUnitsWithSamePriority(
-                    playerData.country!.side === SideType.Nod ? ["SENGINEER"] : ["ENGINEER"],
-                    this.priority,
-                );
+                return requestUnitsWithSamePriority(engineerTypes, this.priority);
             }
-            const approachPath = findBestApproachPath(game, engineer, target);
-            if (!approachPath) {
-                const tick = game.getCurrentTick();
-                if (this.unreachableSinceTick === null) {
-                    this.unreachableSinceTick = tick;
-                } else if (tick - this.unreachableSinceTick >= NO_PATH_GIVE_UP_TICKS) {
-                    return disbandMission(NO_PATH);
-                }
-                return noop();
-            }
-            this.unreachableSinceTick = null;
+
             const orderType = this.kind === "repair_bridge" ? OrderType.Repair : OrderType.Capture;
+            // Issue Capture/Repair immediately — do not gate on pathfinding (it often falsely fails).
             actionsApi.orderUnits([engineer.id], orderType, this.targetId);
-            if (this.kind === "capture") {
-                const escortUnits = this.getUnitsOfTypes(game, "DOG", "HTNK", "ADOG", "MTNK");
-                if (escortUnits.length > 0) {
-                    actionsApi.orderUnits(
-                        escortUnits.map((u) => u.id),
-                        OrderType.Guard,
-                        engineer.id,
-                    );
-                }
-            }
             this.lastActionAttemptTick = game.getCurrentTick();
             this.logger(`Engineer ${engineer.id} ${this.kind} → ${this.targetId}`);
+
+            if (this.kind === "capture" && !this.skipEscort) {
+                this.orderEscortGuard(actionsApi, game);
+                if (this.isOilCapture) {
+                    const composition = buildCaptureComposition(side, this.kind, false, this.escortLevel);
+                    const missingEscort = this.getMissingUnits(game, composition).filter(
+                        ([name]) => !engineerTypes.includes(name),
+                    );
+                    if (missingEscort.length > 0) {
+                        return requestUnitsWithSamePriority(
+                            missingEscort.map(([unitName]) => unitName),
+                            Math.max(42, this.priority - 25),
+                        );
+                    }
+                }
+            }
         }
         return noop();
     }
 
+    private orderEscortGuard(actionsApi: MissionContext["player"]["actions"], game: GameApi): void {
+        const escortUnits = this.getUnitsOfTypes(game, "DOG", "HTNK", "ADOG", "MTNK");
+        if (escortUnits.length === 0) {
+            return;
+        }
+        const engineer = this.getUnitsOfTypes(game, "SENGINEER", "ENGINEER")[0];
+        if (!engineer) {
+            return;
+        }
+        actionsApi.orderUnits(
+            escortUnits.map((u) => u.id),
+            OrderType.Guard,
+            engineer.id,
+        );
+    }
+
+    /** Let idle engineers join oil missions; lock once assigned. */
+    public isUnitsLocked(): boolean {
+        if (this.isOilCapture) {
+            return this.getUnitIds().length > 0;
+        }
+        return true;
+    }
+
     public getGlobalDebugText(): string | undefined {
-        return undefined;
+        const state = this.state === EngineerMissionState.Preparing ? "prep" : "act";
+        return `${this.kind}-${state}`;
     }
 
     public getPriority() {
@@ -165,53 +207,44 @@ export class EngineerMission extends Mission {
     }
 }
 
-function getStructureApproachTiles(gameApi: GameApi, target: GameObjectData): Tile[] {
-    const range = computeAdjacentRect(toVector2(target.tile), target.foundation, 1);
-    return getAdjacentTiles(gameApi, range, false).filter((tile) =>
-        gameApi.map.isPassableTile(tile, SpeedType.Foot, {}, true),
-    );
-}
-
-function findBestApproachPath(
-    gameApi: GameApi,
-    unit: UnitData,
-    target: GameObjectData,
-): { tile: Tile; pathLength: number } | null {
-    const approaches = getStructureApproachTiles(gameApi, target);
-    if (approaches.length === 0) {
-        return null;
-    }
-
-    const startOnBridge = unit.onBridge ?? false;
-    const bridgeVariants = startOnBridge ? [true, false] : [false, true];
-    let best: { tile: Tile; pathLength: number } | null = null;
-
-    for (const onBridge of bridgeVariants) {
-        const start = toPathNode(unit.tile, onBridge);
-        for (const tile of approaches) {
-            try {
-                const path = gameApi.mapApi.findPath(
-                    SpeedType.Foot,
-                    start,
-                    toPathNode(tile, false),
-                    { bestEffort: true, maxExpandedNodes: 2500 },
-                );
-                if (path.length === 0) {
-                    continue;
-                }
-                if (!best || path.length < best.pathLength) {
-                    best = { tile, pathLength: path.length };
-                }
-            } catch {
-                // try next approach tile
+function buildCaptureComposition(
+    side: SideType,
+    kind: EngineerMissionKind,
+    skipEscort: boolean,
+    escortLevel: number,
+): UnitComposition {
+    const composition: UnitComposition = {};
+    if (side === SideType.Nod) {
+        composition["SENGINEER"] = 1;
+        if (kind === "capture" && !skipEscort) {
+            const dogs = Math.max(0, escortLevel - 1);
+            const tanks = Math.max(0, escortLevel - 2);
+            if (dogs > 0) {
+                composition["DOG"] = dogs;
+            }
+            if (tanks > 0) {
+                composition["HTNK"] = tanks;
             }
         }
-        if (best) {
-            break;
+    } else {
+        composition["ENGINEER"] = 1;
+        if (kind === "capture" && !skipEscort) {
+            const dogs = Math.max(0, escortLevel - 1);
+            const tanks = Math.max(0, escortLevel - 2);
+            if (dogs > 0) {
+                composition["ADOG"] = dogs;
+            }
+            if (tanks > 0) {
+                composition["MTNK"] = tanks;
+            }
         }
     }
+    return composition;
+}
 
-    return best;
+function findIdleEngineerId(game: GameApi, playerName: string, engineerName: string): number | null {
+    const ids = game.getVisibleUnits(playerName, "self", (r) => r.name === engineerName);
+    return ids.length > 0 ? ids[0] : null;
 }
 
 function isEnemyBuildingCapturable(game: GameApi, objectId: number): boolean {
@@ -234,8 +267,71 @@ function isEnemyBuildingCapturable(game: GameApi, objectId: number): boolean {
     return hp / maxHp <= captureLevel + 0.2;
 }
 
-function isOilDerrick(rules: { produceCashAmount?: number; name?: string }): boolean {
-    return (rules.produceCashAmount ?? 0) > 0 || rules.name === "CAOILD";
+function isOilDerrick(rules: { produceCashAmount?: number; produceCashStartup?: number; name?: string }): boolean {
+    return (
+        (rules.produceCashAmount ?? 0) > 0 ||
+        (rules.produceCashStartup ?? 0) > 0 ||
+        rules.name === "CAOILD"
+    );
+}
+
+function hasRefinery(game: GameApi, playerData: PlayerData): boolean {
+    return REFINERY_NAMES.some((name) => numBuildingsOwnedOfName(game, playerData, name) > 0);
+}
+
+function findCapturableOilDerrickIds(game: GameApi, playerName: string): number[] {
+    const ids = new Set<number>();
+    const consider = (objectId: number) => {
+        const data = game.getGameObjectData(objectId);
+        if (!data?.rules?.capturable || !data.rules.needsEngineer) {
+            return;
+        }
+        if (data.owner === playerName) {
+            return;
+        }
+        if (!isOilDerrick(data.rules)) {
+            return;
+        }
+        ids.add(objectId);
+    };
+
+    for (const id of game.getVisibleUnits(
+        playerName,
+        "hostile",
+        (r) => r.capturable && r.needsEngineer,
+    )) {
+        consider(id);
+    }
+    try {
+        for (const id of game.getNeutralUnits((r) => r.capturable && r.needsEngineer)) {
+            consider(id);
+        }
+    } catch {
+        // Civilian house may be missing on some maps / skirmish setups.
+    }
+    return [...ids];
+}
+
+function countVisibleUncapturedOilDerricks(game: GameApi, playerName: string): number {
+    return findCapturableOilDerrickIds(game, playerName).filter((id) => {
+        const tile = game.getGameObjectData(id)?.tile;
+        if (!tile) {
+            return false;
+        }
+        return game.mapApi.isVisibleTile(tile, playerName);
+    }).length;
+}
+
+function countActiveOilCaptureMissions(missionController: MissionController): number {
+    return missionController
+        .getMissions()
+        .filter((m) => m.getUniqueName().startsWith("capture-oil-")).length;
+}
+
+function hasPendingVisibleOil(game: GameApi, playerName: string, missionController: MissionController): boolean {
+    const visibleOil = countVisibleUncapturedOilDerricks(game, playerName);
+    const activeOil = countActiveOilCaptureMissions(missionController);
+    return visibleOil > activeOil;
 }
 
 function getCaptureMissionPriority(
@@ -246,14 +342,6 @@ function getCaptureMissionPriority(
         return OIL_DERRICK_CAPTURE_PRIORITY;
     }
     return savage ? TECH_CAPTURE_PRIORITY : DEFAULT_CAPTURE_PRIORITY;
-}
-
-function countVisibleUncapturedOilDerricks(game: GameApi, playerName: string): number {
-    return game.getVisibleUnits(
-        playerName,
-        "hostile",
-        (r) => r.capturable && !!(r as { needsEngineer?: boolean }).needsEngineer && isOilDerrick(r),
-    ).length;
 }
 
 function scoreTechCaptureTarget(game: GameApi, objectId: number, playerName: string): number {
@@ -381,19 +469,98 @@ export class EngineerMissionFactory {
 
     maybeCreateMissions(context: SupabotContext, missionController: MissionController, logger: DebugLogger): void {
         const { game } = context;
+        const aggressive = isBrutalOrSavageProfile(context.botProfile);
         const savage = context.botProfile?.id === "savage";
         const attacksActive = savage && hasLaunchedAttackMissions(context, missionController);
-        const interval = savage ? Math.floor(CHECK_INTERVAL_TICKS * 0.5) : CHECK_INTERVAL_TICKS;
+        const interval = aggressive ? Math.floor(CHECK_INTERVAL_TICKS * 0.5) : CHECK_INTERVAL_TICKS;
         if (!(game.getCurrentTick() > this.lastCheckAt + interval)) {
             return;
         }
         this.lastCheckAt = game.getCurrentTick();
 
+        if (aggressive) {
+            this.maybeCreateOilCaptureMissions(context, missionController, logger);
+        }
         this.maybeCreateCaptureMissions(context, missionController, logger);
 
         if (savage) {
             this.maybeCreateBridgeRepairs(context, missionController, logger, attacksActive);
             this.maybeCreateGarrisons(context, missionController, logger);
+        }
+    }
+
+    private maybeCreateOilCaptureMissions(
+        context: SupabotContext,
+        missionController: MissionController,
+        logger: DebugLogger,
+    ): void {
+        const { game } = context;
+        const playerData = game.getPlayerData(context.player.name);
+
+        if (!hasRefinery(game, playerData)) {
+            return;
+        }
+
+        const oilIds = findCapturableOilDerrickIds(game, playerData.name).filter((id) => {
+            const data = game.getGameObjectData(id);
+            if (!data?.tile) {
+                return false;
+            }
+            return game.mapApi.isVisibleTile(data.tile, playerData.name);
+        });
+
+        if (oilIds.length === 0) {
+            return;
+        }
+
+        const maxOilMissions = isBrutalOrSavageProfile(context.botProfile) ? 2 : 1;
+        let activeOil = countActiveOilCaptureMissions(missionController);
+
+        const scored = oilIds
+            .map((id) => ({ id, score: scoreTechCaptureTarget(game, id, playerData.name) }))
+            .sort((a, b) => b.score - a.score);
+
+        for (const { id: buildingId } of scored) {
+            if (activeOil >= maxOilMissions) {
+                break;
+            }
+            if (missionController.getMissions().some((m) => m.getUniqueName() === `capture-oil-${buildingId}`)) {
+                continue;
+            }
+            if (
+                (this.lostEngineerCounts[buildingId] ?? 0) >= MAX_ATTEMPT_COUNT ||
+                (this.noPathCounts[buildingId] ?? 0) >= MAX_ATTEMPT_COUNT
+            ) {
+                continue;
+            }
+
+            const baseEscortLevel = (this.lostEngineerCounts[buildingId] ?? 0) + 1;
+            const escortLevel = Math.max(2, baseEscortLevel);
+            const added = missionController.addMission(
+                new EngineerMission(
+                    `capture-oil-${buildingId}`,
+                    OIL_DERRICK_CAPTURE_PRIORITY,
+                    buildingId,
+                    escortLevel,
+                    "capture",
+                    false,
+                    logger,
+                    true,
+                ).withOnFinish((_unitIds, reason) => {
+                    if (reason === LOST_ENGINEER) {
+                        this.lostEngineerCounts[buildingId] =
+                            (this.lostEngineerCounts[buildingId] ?? 0) + 1;
+                    } else if (reason === NO_PATH) {
+                        this.noPathCounts[buildingId] = (this.noPathCounts[buildingId] ?? 0) + 1;
+                    }
+                }),
+            );
+            if (added) {
+                activeOil++;
+                logger(
+                    `Created oil capture mission for derrick ${buildingId} (priority ${OIL_DERRICK_CAPTURE_PRIORITY}, escort ${escortLevel})`,
+                );
+            }
         }
     }
 
@@ -413,11 +580,16 @@ export class EngineerMissionFactory {
             return;
         }
 
-        const techBuildingIds = game.getVisibleUnits(
-            playerData.name,
-            "hostile",
-            (r) => r.capturable && !!(r as { needsEngineer?: boolean }).needsEngineer,
-        );
+        const techBuildingIds = game
+            .getVisibleUnits(
+                playerData.name,
+                "hostile",
+                (r) => r.capturable && !!(r as { needsEngineer?: boolean }).needsEngineer,
+            )
+            .filter((id) => {
+                const rules = game.getGameObjectData(id)?.rules;
+                return rules && !isOilDerrick(rules);
+            });
         const enemyBuildingIds = game.getVisibleUnits(
             playerData.name,
             "enemy",
@@ -455,7 +627,6 @@ export class EngineerMissionFactory {
             const oilCapture = isOilDerrick(rules);
             const priority = getCaptureMissionPriority(rules, savage);
             const baseEscortLevel = (this.lostEngineerCounts[buildingId] ?? 0) + 1;
-            // Oil runs: always bring at least a dog escort (escortLevel 2+).
             const escortLevel = oilCapture ? Math.max(2, baseEscortLevel) : baseEscortLevel;
             const added = missionController.addMission(
                 new EngineerMission(
@@ -466,6 +637,7 @@ export class EngineerMissionFactory {
                     "capture",
                     false,
                     logger,
+                    oilCapture,
                 ).withOnFinish((_unitIds, reason) => {
                     if (reason === LOST_ENGINEER) {
                         this.lostEngineerCounts[buildingId] =
@@ -495,15 +667,11 @@ export class EngineerMissionFactory {
         const { game, matchAwareness } = context;
         const playerData = game.getPlayerData(context.player.name);
         const active = missionController.getMissions().filter((m) => m.getUniqueName().startsWith("bridge-"));
-        const visibleOil = countVisibleUncapturedOilDerricks(game, playerData.name);
-        const activeOilCaptures = missionController
-            .getMissions()
-            .filter((m) => m.getUniqueName().startsWith("capture-")).length;
-        const oilNeedsEngineers = visibleOil > activeOilCaptures;
-        let maxActive = attacksActive ? 4 : 2;
-        if (oilNeedsEngineers) {
-            maxActive = attacksActive ? 2 : 1;
+        const oilPending = hasPendingVisibleOil(game, playerData.name, missionController);
+        if (oilPending) {
+            return;
         }
+        let maxActive = attacksActive ? 4 : 2;
         if (active.length >= maxActive) {
             return;
         }
@@ -543,9 +711,6 @@ export class EngineerMissionFactory {
 
         for (const { hutId, hut, score } of candidates) {
             const onAttackRoute = score >= ATTACK_PATH_BRIDGE_SCORE_THRESHOLD;
-            if (oilNeedsEngineers && !onAttackRoute) {
-                continue;
-            }
             const priority = onAttackRoute
                 ? BRIDGE_REPAIR_ATTACK_PATH_PRIORITY
                 : getBridgeRepairPriorityForHut(hut, context, missionController);

@@ -28,6 +28,7 @@ export class PrioritisedScoutTarget {
 }
 
 const ENEMY_SPAWN_POINT_PRIORITY = 900;
+const OIL_DERRICK_SCOUT_PRIORITY = 880;
 
 // Distance around the starting area (in tiles) to scout first.
 const NEARBY_SECTOR_STARTING_RADIUS = 16;
@@ -110,6 +111,26 @@ export class ScoutingManager {
             NEARBY_SECTOR_STARTING_RADIUS,
             NEARBY_SECTOR_BASE_PRIORITY,
         );
+
+        // Neutral oil derricks — scout early so capture missions can fire.
+        try {
+            for (const objectId of gameApi.getNeutralUnits(
+                (r) =>
+                    r.capturable &&
+                    r.needsEngineer &&
+                    ((r.produceCashAmount ?? 0) > 0 || r.name === "CAOILD"),
+            )) {
+                const data = gameApi.getGameObjectData(objectId);
+                if (!data?.tile) {
+                    continue;
+                }
+                const target = new Vector2(data.tile.rx, data.tile.ry);
+                this.logger(`Adding oil derrick scout target ${target.x},${target.y}`);
+                this.scoutingQueue.enqueue(new PrioritisedScoutTarget(OIL_DERRICK_SCOUT_PRIORITY, target, true));
+            }
+        } catch {
+            // Civilian house may be missing — oil scouting falls back to sector exploration.
+        }
     }
 
     onAiUpdate(gameApi: GameApi, playerData: PlayerData, sectorCache: SectorCache) {

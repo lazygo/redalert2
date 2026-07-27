@@ -15,9 +15,15 @@ import {
     isSavageStaticDefence,
     resolveSavageProductionMaxCount,
 } from "../../building/savageBuildingPolicy";
+import {
+    applyWallFortifyPriority,
+    getWallPlacementAroundConyards,
+    isWallStructure,
+} from "../../building/wallFortification";
 import { getSavageStaticDefencePlacement } from "../../building/common";
 import { queueTypeToName } from "../../building/queueController";
 import { numBuildingsOwnedOfName } from "../../building/buildingRules";
+import { isBrutalOrSavageProfile } from "../../../BotDifficultyProfile";
 
 // Legacy mission encompassing the old "build queue" logic.
 export class BaseBuildingMission extends Mission {
@@ -39,19 +45,31 @@ export class BaseBuildingMission extends Mission {
         const threatCache = matchAwareness.getThreatCache();
 
         const optionWithPriority = options.map((option) => {
-            return {
-                option,
-                priority: this.getPriorityForBuildingOption(option, game, playerData, threatCache, context),
-            };
+            try {
+                return {
+                    option,
+                    priority: this.getPriorityForBuildingOption(option, game, playerData, threatCache, context),
+                };
+            } catch (err) {
+                this.logger(`Building priority error for ${option.name}: ${err}`);
+                return { option, priority: -100 };
+            }
         });
 
         const bestOption = maxBy(optionWithPriority, (option) => option.priority);
 
-        if (!bestOption || bestOption.priority === 0) {
+        // Only positive priorities may enter the production queue.
+        if (!bestOption || bestOption.priority <= 0) {
             return noop();
         }
 
-        const bestLocation = this.getBestLocationForStructure(game, playerData, bestOption.option, context);
+        let bestLocation: { rx: number; ry: number } | undefined;
+        try {
+            bestLocation = this.getBestLocationForStructure(game, playerData, bestOption.option, context);
+        } catch (err) {
+            this.logger(`Building placement error for ${bestOption.option.name}: ${err}`);
+            return noop();
+        }
 
         if (!bestLocation) {
             return noop();
@@ -81,6 +99,15 @@ export class BaseBuildingMission extends Mission {
             }
             let logic = BUILDING_NAME_TO_RULES.get(option.name)!;
             let priority = logic.getPriority(game, playerStatus, option, threatCache);
+            if (isBrutalOrSavageProfile(context.botProfile)) {
+                priority = applyWallFortifyPriority(
+                    option.name,
+                    priority,
+                    game,
+                    playerStatus,
+                    context.botProfile,
+                );
+            }
             if (context.botProfile?.fortifyBase) {
                 if (isSavageProductionStructure(option.name)) {
                     const savageMax = resolveSavageProductionMaxCount(
@@ -120,6 +147,12 @@ export class BaseBuildingMission extends Mission {
         context: MissionContext,
     ): { rx: number; ry: number } | undefined {
         if (BUILDING_NAME_TO_RULES.has(objectReady.name)) {
+            if (isBrutalOrSavageProfile(context.botProfile) && isWallStructure(objectReady.name)) {
+                const wallLocation = getWallPlacementAroundConyards(game, playerData, objectReady);
+                if (wallLocation) {
+                    return wallLocation;
+                }
+            }
             if (context.botProfile?.fortifyBase && isSavageStaticDefence(objectReady.name)) {
                 const savageLocation = getSavageStaticDefencePlacement(game, playerData, objectReady);
                 if (savageLocation) {

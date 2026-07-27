@@ -26,35 +26,35 @@ const SAVAGE_STRUCTURE_TARGETS: Record<string, SavageStructureTarget> = {
     NAWEAP: { min: 1, max: 3, priority: 19, sustainPriority: 9 },
 
     // Power redundancy — survive raiders targeting power plants.
-    GAPOWR: { min: 3, max: 5, priority: 22, sustainPriority: 10 },
-    NAPOWR: { min: 3, max: 5, priority: 22, sustainPriority: 10 },
-    NANRCT: { min: 1, max: 2, priority: 20, sustainPriority: 12 },
+    GAPOWR: { min: 2, max: 4, priority: 22, sustainPriority: 8 },
+    NAPOWR: { min: 2, max: 4, priority: 22, sustainPriority: 8 },
+    NANRCT: { min: 1, max: 2, priority: 20, sustainPriority: 10 },
 
     // Repair depots — unlock MCV production; build right after war factory.
     GADEPT: { min: 1, priority: 24 },
     NADEPT: { min: 1, priority: 24 },
 
-    // Tech / late-game economy
-    GATECH: { min: 1, priority: 24 },
-    NATECH: { min: 1, priority: 24 },
-    GASPYSAT: { min: 1, priority: 16 },
+    // Tech / late-game — beat redundant power & production spam once prerequisites exist.
+    GATECH: { min: 1, priority: 30 },
+    NATECH: { min: 1, priority: 30 },
+    GASPYSAT: { min: 1, priority: 22 },
     GAGAP: { min: 2, max: 3, priority: 14, sustainPriority: 8 },
-    NAPSIS: { min: 1, priority: 14 },
+    NAPSIS: { min: 1, priority: 18 },
 
-    // Air facilities
-    GAAIRC: { min: 2, priority: 15 },
-    AMRADR: { min: 2, priority: 15 },
-    NARADR: { min: 1, priority: 13 },
+    // Air / radar — unlock battle lab; must outrank static-defence sustain.
+    GAAIRC: { min: 1, max: 2, priority: 26, sustainPriority: 12 },
+    AMRADR: { min: 1, max: 2, priority: 26, sustainPriority: 12 },
+    NARADR: { min: 1, priority: 26 },
 
     // Ground defenses — ring around base, not just the front line.
-    ATESLA: { min: 6, max: 10, priority: 13, sustainPriority: 7 },
-    TESLA: { min: 6, max: 10, priority: 13, sustainPriority: 7 },
-    GAPILL: { min: 10, max: 16, priority: 11, sustainPriority: 6 },
-    NALASR: { min: 10, max: 16, priority: 11, sustainPriority: 6 },
+    ATESLA: { min: 4, max: 8, priority: 13, sustainPriority: 5 },
+    TESLA: { min: 4, max: 8, priority: 13, sustainPriority: 5 },
+    GAPILL: { min: 6, max: 12, priority: 10, sustainPriority: 4 },
+    NALASR: { min: 6, max: 12, priority: 10, sustainPriority: 4 },
 
     // Anti-air
-    NASAM: { min: 8, max: 12, priority: 12, sustainPriority: 6 },
-    NAFLAK: { min: 8, max: 12, priority: 12, sustainPriority: 6 },
+    NASAM: { min: 4, max: 8, priority: 11, sustainPriority: 5 },
+    NAFLAK: { min: 4, max: 8, priority: 11, sustainPriority: 5 },
 };
 
 const STATIC_DEFENCE_NAMES = new Set([
@@ -226,10 +226,10 @@ export function applySavageStructurePriority(
         fillPriority = Math.max(fillPriority, target.priority + 4);
     }
 
-    // Extra power buffer: keep ~40% surplus so one plant loss doesn't cripple the base.
+    // Extra power buffer: keep ~25% surplus — don't starve tech for endless plants.
     if (POWER_PLANT_NAMES.has(buildingName) && playerData.power.drain > 0) {
         const surplusRatio = playerData.power.total / playerData.power.drain;
-        if (surplusRatio < 1.45) {
+        if (surplusRatio < 1.25) {
             fillPriority = Math.max(fillPriority, target.priority);
         }
     }
