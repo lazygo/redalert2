@@ -245,6 +245,12 @@ export class GameApi {
                 isWarpedOut: unit.warpedOutTrait.isActive(),
                 mindControlledBy: unit.mindControllableTrait?.getController()?.id,
                 tntTimer: unit.tntChargeTrait?.getTicksLeft(),
+                disguiseUnitName: unit.disguiseTrait?.isDisguised()
+                    ? unit.disguiseTrait.getDisguise()?.rules?.name
+                    : undefined,
+                disguiseOwnerName: unit.disguiseTrait?.isDisguised()
+                    ? unit.disguiseTrait.getDisguise()?.owner?.name
+                    : undefined,
             };
         }
     }

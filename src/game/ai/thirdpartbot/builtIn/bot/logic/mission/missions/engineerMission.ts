@@ -1,4 +1,4 @@
-import { GameApi, GameObjectData, OrderType, SideType, SpeedType, UnitData, Vector2 } from "../../../../game-api";
+import { GameApi, GameObjectData, OrderType, SideType, SpeedType, Tile, UnitData, Vector2 } from "../../../../game-api";
 import {
     Mission,
     MissionAction,
@@ -23,6 +23,10 @@ import {
 const ACTION_COOLDOWN_TICKS = 30;
 const CHECK_INTERVAL_TICKS = 200;
 const MAX_ATTEMPT_COUNT = 3;
+/** Give up only after this many ticks of unreachable target (not on first path check). */
+const NO_PATH_GIVE_UP_TICKS = 15 * 80;
+const MAX_CONCURRENT_CAPTURE_MISSIONS = 2;
+const CAPTURE_MISSION_PRIORITY = 100;
 
 enum EngineerMissionState {
     Preparing = 0,
@@ -40,6 +44,7 @@ const NO_PATH = "no_path";
 export class EngineerMission extends Mission {
     private state = EngineerMissionState.Preparing;
     private lastActionAttemptTick = -1;
+    private unreachableSinceTick: number | null = null;
 
     constructor(
         uniqueName: string,
@@ -117,9 +122,17 @@ export class EngineerMission extends Mission {
                     this.priority,
                 );
             }
-            if (!canReachStructure(game, engineer, target)) {
-                return disbandMission(NO_PATH);
+            const approachPath = findBestApproachPath(game, engineer, target);
+            if (!approachPath) {
+                const tick = game.getCurrentTick();
+                if (this.unreachableSinceTick === null) {
+                    this.unreachableSinceTick = tick;
+                } else if (tick - this.unreachableSinceTick >= NO_PATH_GIVE_UP_TICKS) {
+                    return disbandMission(NO_PATH);
+                }
+                return noop();
             }
+            this.unreachableSinceTick = null;
             const orderType = this.kind === "repair_bridge" ? OrderType.Repair : OrderType.Capture;
             actionsApi.orderUnits([engineer.id], orderType, this.targetId);
             if (this.kind === "capture") {
@@ -147,21 +160,108 @@ export class EngineerMission extends Mission {
     }
 }
 
-function canReachStructure(gameApi: GameApi, engineer: UnitData, target: GameObjectData) {
-    const reachabilityMap = gameApi.map.getReachabilityMap(SpeedType.Foot, true);
+function getStructureApproachTiles(gameApi: GameApi, target: GameObjectData): Tile[] {
     const range = computeAdjacentRect(toVector2(target.tile), target.foundation, 1);
-    const adjacentTiles = getAdjacentTiles(gameApi, range, false);
-    for (const tile of adjacentTiles) {
-        if (
-            reachabilityMap.isReachable(
-                toPathNode(engineer.tile, engineer.onBridge ?? false) as any,
-                toPathNode(tile, false) as any,
-            )
-        ) {
-            return true;
+    return getAdjacentTiles(gameApi, range, false).filter((tile) =>
+        gameApi.map.isPassableTile(tile, SpeedType.Foot, {}, true),
+    );
+}
+
+function findBestApproachPath(
+    gameApi: GameApi,
+    unit: UnitData,
+    target: GameObjectData,
+): { tile: Tile; pathLength: number } | null {
+    const approaches = getStructureApproachTiles(gameApi, target);
+    if (approaches.length === 0) {
+        return null;
+    }
+
+    const startOnBridge = unit.onBridge ?? false;
+    const bridgeVariants = startOnBridge ? [true, false] : [false, true];
+    let best: { tile: Tile; pathLength: number } | null = null;
+
+    for (const onBridge of bridgeVariants) {
+        const start = toPathNode(unit.tile, onBridge);
+        for (const tile of approaches) {
+            try {
+                const path = gameApi.mapApi.findPath(
+                    SpeedType.Foot,
+                    start,
+                    toPathNode(tile, false),
+                    { bestEffort: true, maxExpandedNodes: 2500 },
+                );
+                if (path.length === 0) {
+                    continue;
+                }
+                if (!best || path.length < best.pathLength) {
+                    best = { tile, pathLength: path.length };
+                }
+            } catch {
+                // try next approach tile
+            }
+        }
+        if (best) {
+            break;
         }
     }
-    return false;
+
+    return best;
+}
+
+function isEnemyBuildingCapturable(game: GameApi, objectId: number): boolean {
+    const data = game.getGameObjectData(objectId);
+    if (!data?.rules?.capturable || data.owner === undefined) {
+        return false;
+    }
+    const owner = game.getPlayerData(data.owner);
+    if (!owner.isCombatant) {
+        return false;
+    }
+    const hp = data.hitPoints ?? 0;
+    const maxHp = data.maxHitPoints ?? 1;
+    const captureLevel = game.getGeneralRules()?.engineerCaptureLevel ?? 0.25;
+    const captureThreshold = 100 * captureLevel;
+    if (hp <= captureThreshold + 1) {
+        return true;
+    }
+    // Damaged structures — engineer may need multiple trips when multi-engineer is enabled.
+    return hp / maxHp <= captureLevel + 0.2;
+}
+
+function scoreTechCaptureTarget(game: GameApi, objectId: number): number {
+    const data = game.getGameObjectData(objectId);
+    if (!data?.rules?.capturable) {
+        return 0;
+    }
+    const cash = (data.rules as { produceCashAmount?: number }).produceCashAmount ?? 0;
+    return 1000 + cash * 10;
+}
+
+function scoreEnemyCaptureTarget(game: GameApi, playerName: string, objectId: number): number {
+    const data = game.getGameObjectData(objectId);
+    if (!data || !isEnemyBuildingCapturable(game, objectId)) {
+        return 0;
+    }
+    const hp = data.hitPoints ?? 0;
+    const maxHp = data.maxHitPoints ?? 1;
+    const damageScore = (1 - hp / maxHp) * 500;
+    const valueByName: Record<string, number> = {
+        GACNST: 400,
+        NACNST: 400,
+        GAWEAP: 350,
+        NAWEAP: 350,
+        GATECH: 320,
+        NATECH: 320,
+        GAREFN: 280,
+        NAREFN: 280,
+        GAPILE: 200,
+        NAHAND: 200,
+    };
+    const nameScore = valueByName[data.name] ?? 120;
+    const playerData = game.getPlayerData(playerName);
+    const dist = playerData.startLocation.distanceTo(new Vector2(data.tile.rx, data.tile.ry));
+    return damageScore + nameScore - dist * 2;
 }
 
 /**
@@ -256,7 +356,7 @@ export class EngineerMissionFactory {
         }
         this.lastCheckAt = game.getCurrentTick();
 
-        this.maybeCreateTechCaptures(context, missionController, logger);
+        this.maybeCreateCaptureMissions(context, missionController, logger);
 
         if (savage) {
             this.maybeCreateBridgeRepairs(context, missionController, logger, attacksActive);
@@ -264,45 +364,74 @@ export class EngineerMissionFactory {
         }
     }
 
-    private maybeCreateTechCaptures(
+    private maybeCreateCaptureMissions(
         context: SupabotContext,
         missionController: MissionController,
         logger: DebugLogger,
     ): void {
         const { game } = context;
         const playerData = game.getPlayerData(context.player.name);
-        const eligibleTechBuildings = game.getVisibleUnits(
+        const activeCaptures = missionController
+            .getMissions()
+            .filter((m) => m.getUniqueName().startsWith("capture-")).length;
+        if (activeCaptures >= MAX_CONCURRENT_CAPTURE_MISSIONS) {
+            return;
+        }
+
+        const techBuildingIds = game.getVisibleUnits(
             playerData.name,
             "hostile",
-            (r) => r.capturable && r.produceCashAmount > 0,
+            (r) => r.capturable && !!(r as { needsEngineer?: boolean }).needsEngineer,
+        );
+        const enemyBuildingIds = game.getVisibleUnits(
+            playerData.name,
+            "enemy",
+            (r) => r.capturable && !(r as { needsEngineer?: boolean }).needsEngineer,
         );
 
-        eligibleTechBuildings.forEach((techBuildingId) => {
-            if (
-                (this.lostEngineerCounts[techBuildingId] ?? 0) >= MAX_ATTEMPT_COUNT ||
-                (this.noPathCounts[techBuildingId] ?? 0) >= MAX_ATTEMPT_COUNT
-            ) {
-                return;
+        const candidates = [
+            ...techBuildingIds.map((id) => ({ id, score: scoreTechCaptureTarget(game, id) })),
+            ...enemyBuildingIds
+                .filter((id) => isEnemyBuildingCapturable(game, id))
+                .map((id) => ({ id, score: scoreEnemyCaptureTarget(game, playerData.name, id) })),
+        ]
+            .filter((entry) => entry.score > 0)
+            .sort((a, b) => b.score - a.score);
+
+        let created = activeCaptures;
+        for (const { id: buildingId } of candidates) {
+            if (created >= MAX_CONCURRENT_CAPTURE_MISSIONS) {
+                break;
             }
-            const escortLevel = (this.lostEngineerCounts[techBuildingId] ?? 0) + 1;
-            missionController.addMission(
+            if (
+                (this.lostEngineerCounts[buildingId] ?? 0) >= MAX_ATTEMPT_COUNT ||
+                (this.noPathCounts[buildingId] ?? 0) >= MAX_ATTEMPT_COUNT
+            ) {
+                continue;
+            }
+            const escortLevel = (this.lostEngineerCounts[buildingId] ?? 0) + 1;
+            const added = missionController.addMission(
                 new EngineerMission(
-                    "capture-" + techBuildingId,
-                    100,
-                    techBuildingId,
+                    "capture-" + buildingId,
+                    CAPTURE_MISSION_PRIORITY,
+                    buildingId,
                     escortLevel,
                     "capture",
                     logger,
                 ).withOnFinish((_unitIds, reason) => {
                     if (reason === LOST_ENGINEER) {
-                        this.lostEngineerCounts[techBuildingId] =
-                            (this.lostEngineerCounts[techBuildingId] ?? 0) + 1;
+                        this.lostEngineerCounts[buildingId] =
+                            (this.lostEngineerCounts[buildingId] ?? 0) + 1;
                     } else if (reason === NO_PATH) {
-                        this.noPathCounts[techBuildingId] = (this.noPathCounts[techBuildingId] ?? 0) + 1;
+                        this.noPathCounts[buildingId] = (this.noPathCounts[buildingId] ?? 0) + 1;
                     }
                 }),
             );
-        });
+            if (added) {
+                created++;
+                logger(`Created engineer capture mission for building ${buildingId}`);
+            }
+        }
     }
 
     private maybeCreateBridgeRepairs(

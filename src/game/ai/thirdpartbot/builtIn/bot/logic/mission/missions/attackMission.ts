@@ -28,8 +28,9 @@ export enum AttackMissionState {
 const NO_TARGET_RETARGET_TICKS = 300;
 const NO_TARGET_IDLE_TIMEOUT_TICKS = 600;
 
-const ATTACK_MISSION_PRIORITY_RAMP = 1.01;
-const ATTACK_MISSION_MAX_PRIORITY = 50;
+const ATTACK_MISSION_PRIORITY_RAMP = 1.02;
+/** Above base-guard fill (22) but below garrison hold (58) so attacks get factory output without stripping guards. */
+const ATTACK_MISSION_MAX_PRIORITY = 54;
 // While preparing the squad, how many ticks to wait before dropping one unit from the desired squad size. If the squad size drops below the minimum, the attack mission is aborted.
 const REQUESTED_UNIT_COUNT_DECAY_TICKS = 120;
 
@@ -45,6 +46,7 @@ export class AttackMission extends Mission<AttackFailReason> {
     private state: AttackMissionState = AttackMissionState.Preparing;
     private requestedUnitCount: number;
     private lastRequestedUnitCountDecayAt: number | null = null;
+    private preparingSinceTick: number | null = null;
     private readonly squadDecayTicks: number | null;
 
     constructor(
@@ -76,6 +78,20 @@ export class AttackMission extends Mission<AttackFailReason> {
 
     private handlePreparingState(context: MissionContext) {
         const { game } = context;
+        const tick = game.getCurrentTick();
+        if (this.preparingSinceTick === null) {
+            this.preparingSinceTick = tick;
+        } else if (
+            tick > this.preparingSinceTick + 120 &&
+            this.getUnitIds().length < Math.ceil(this.composition.minimumUnits * 0.35)
+        ) {
+            // Stuck gathering — shrink the wave so harass/retries can fire instead of blocking forever.
+            this.requestedUnitCount = Math.max(
+                this.composition.minimumUnits - 1,
+                this.requestedUnitCount - 1,
+            );
+            this.preparingSinceTick = tick;
+        }
         this.decayDesiredCompositionIfNeeded(game, context);
         if (this.requestedUnitCount < this.composition.minimumUnits) {
             return disbandMission(AttackFailReason.UnableToAcquireUnits);
@@ -235,24 +251,30 @@ function generateTarget(
         if (maxUnit) {
             return new Vector2(maxUnit.tile.rx, maxUnit.tile.ry);
         }
-        if (includeBaseLocations) {
-            const mapApi = gameApi.mapApi;
-            const enemyPlayers = gameApi
-                .getPlayers()
-                .map((p) => gameApi.getPlayerData(p))
-                .filter((otherPlayer) => !gameApi.areAlliedPlayers(playerData.name, otherPlayer.name));
 
-            const unexploredEnemyLocations = enemyPlayers.filter((otherPlayer) => {
-                const tile = mapApi.getTile(otherPlayer.startLocation.x, otherPlayer.startLocation.y);
-                if (!tile) {
-                    return false;
+        const mapApi = gameApi.mapApi;
+        const enemyPlayers = gameApi
+            .getPlayers()
+            .map((p) => gameApi.getPlayerData(p))
+            .filter((otherPlayer) => !gameApi.areAlliedPlayers(playerData.name, otherPlayer.name));
+
+        if (enemyPlayers.length > 0) {
+            if (includeBaseLocations) {
+                const unexploredEnemyLocations = enemyPlayers.filter((otherPlayer) => {
+                    const tile = mapApi.getTile(otherPlayer.startLocation.x, otherPlayer.startLocation.y);
+                    if (!tile) {
+                        return false;
+                    }
+                    return !mapApi.isVisibleTile(tile, playerData.name);
+                });
+                if (unexploredEnemyLocations.length > 0) {
+                    const idx = gameApi.generateRandomInt(0, unexploredEnemyLocations.length - 1);
+                    return unexploredEnemyLocations[idx].startLocation;
                 }
-                return !mapApi.isVisibleTile(tile, playerData.name);
-            });
-            if (unexploredEnemyLocations.length > 0) {
-                const idx = gameApi.generateRandomInt(0, unexploredEnemyLocations.length - 1);
-                return unexploredEnemyLocations[idx].startLocation;
             }
+            // No visible enemies yet — march toward a known enemy base so attacks still happen early.
+            const idx = gameApi.generateRandomInt(0, enemyPlayers.length - 1);
+            return enemyPlayers[idx].startLocation;
         }
     } catch (err) {
         // There's a crash here when accessing a building that got destroyed. Will catch and ignore or now.
@@ -267,7 +289,7 @@ const DEFAULT_VISIBLE_TARGET_ATTACK_COOLDOWN_TICKS = 60;
 // Number of ticks between attacking "bases" (enemy starting locations).
 const DEFAULT_BASE_ATTACK_COOLDOWN_TICKS = 600;
 
-const ATTACK_MISSION_INITIAL_PRIORITY = 28;
+const ATTACK_MISSION_INITIAL_PRIORITY = 42;
 
 export class AttackMissionFactory {
     constructor(
@@ -317,20 +339,41 @@ export class AttackMissionFactory {
             .getMissions()
             .filter((mission): mission is AttackMission => mission instanceof AttackMission);
 
+        const wavePrefix = `${wave}_`;
+        const sameWaveMissions = attackMissions.filter((mission) =>
+            mission.getUniqueName().startsWith(wavePrefix),
+        );
+        const otherWaveMissions = attackMissions.filter(
+            (mission) => !mission.getUniqueName().startsWith(wavePrefix),
+        );
+
         const useBatching = profile?.batchAttacks && (!profile.alternateAttackWaves || !isHarass);
         if (useBatching) {
-            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Attacking)) {
+            if (sameWaveMissions.some((mission) => mission.getState() === AttackMissionState.Attacking)) {
                 return;
             }
-            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
+            if (sameWaveMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
                 return;
             }
         } else if (profile?.alternateAttackWaves) {
-            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Attacking)) {
+            if (sameWaveMissions.some((mission) => mission.getState() === AttackMissionState.Attacking)) {
                 return;
             }
-            if (attackMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
+            if (sameWaveMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
                 return;
+            }
+            // Assault batching: don't stack a second large wave, but harass may still run in parallel.
+            if (
+                isHarass &&
+                profile.batchAttacks &&
+                otherWaveMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)
+            ) {
+                const assaultPreparing = otherWaveMissions.find(
+                    (mission) => mission.getState() === AttackMissionState.Preparing,
+                );
+                if (assaultPreparing && assaultPreparing.getUnitIds().length >= 6) {
+                    return;
+                }
             }
         }
 
