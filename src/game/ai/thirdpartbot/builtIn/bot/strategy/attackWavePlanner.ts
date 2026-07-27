@@ -56,7 +56,13 @@ export class AttackWavePlanner {
             "self",
             (r) => !!(r as { isSelectableCombatant?: boolean }).isSelectableCombatant,
         ).length;
-        if (combatantCount >= 18) {
+        const tick = game.getCurrentTick();
+        const earlyGame = tick < 15 * 60 * 4;
+
+        if (earlyGame) {
+            harassScore += 0.85;
+            assaultScore *= 0.55;
+        } else if (combatantCount >= 18) {
             assaultScore += 0.55;
         } else if (combatantCount >= 12) {
             assaultScore += 0.3;

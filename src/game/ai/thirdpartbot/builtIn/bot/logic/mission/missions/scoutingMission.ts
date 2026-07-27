@@ -140,7 +140,7 @@ export class ScoutingMission extends Mission {
     }
 }
 
-const SCOUT_COOLDOWN_TICKS = 300;
+const SCOUT_COOLDOWN_TICKS = 180;
 
 export class ScoutingMissionFactory {
     constructor(private lastScoutAt: number = -SCOUT_COOLDOWN_TICKS) {}

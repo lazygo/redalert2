@@ -84,8 +84,8 @@ export const BRUTAL_BOT_PROFILE: BotDifficultyProfile = {
     botApm: 420,
     visibleAttackCooldownTicks: 25,
     baseAttackCooldownTicks: 200,
-    maxPreparingAttacks: 4,
-    compositionSizeMultiplier: 1.85,
+    maxPreparingAttacks: 2,
+    compositionSizeMultiplier: 1.5,
     expandBeforeTicks: 15 * 60 * 2.5,
     conyardPackCooldownTicks: 15 * 60 * 3,
     cheatCreditsIntervalTicks: 15 * 20, // every ~20s at 15 tick/s
@@ -99,7 +99,7 @@ export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
     visibleAttackCooldownTicks: 50,
     baseAttackCooldownTicks: 160,
     maxPreparingAttacks: 2,
-    compositionSizeMultiplier: 2.2,
+    compositionSizeMultiplier: 1.75,
     expandBeforeTicks: 15 * 60 * 1.8,
     conyardPackCooldownTicks: 15 * 60 * 2,
     cheatCreditsIntervalTicks: 15 * 12, // every ~12s
@@ -112,12 +112,12 @@ export const SAVAGE_BOT_PROFILE: BotDifficultyProfile = {
     boostAir: true,
     batchAttacks: true,
     alternateAttackWaves: true,
-    minAttackWaveUnits: 8,
-    attackSquadDecayTicks: 240,
-    harassWaveUnits: 4,
-    harassWaveMaxUnits: 6,
-    harassAttackCooldownTicks: 32,
-    harassSquadDecayTicks: 100,
+    minAttackWaveUnits: 4,
+    attackSquadDecayTicks: 120,
+    harassWaveUnits: 3,
+    harassWaveMaxUnits: 5,
+    harassAttackCooldownTicks: 24,
+    harassSquadDecayTicks: 70,
 };
 
 export function scaleHarassComposition<T extends { minimumUnits: number; maximumUnits: number }>(

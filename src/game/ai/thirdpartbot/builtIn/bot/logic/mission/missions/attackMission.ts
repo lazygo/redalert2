@@ -48,6 +48,7 @@ export class AttackMission extends Mission<AttackFailReason> {
     private lastRequestedUnitCountDecayAt: number | null = null;
     private preparingSinceTick: number | null = null;
     private readonly squadDecayTicks: number | null;
+    private readonly fastLaunch: boolean;
 
     constructor(
         uniqueName: string,
@@ -58,11 +59,14 @@ export class AttackMission extends Mission<AttackFailReason> {
         private composition: SideComposition,
         logger: DebugLogger,
         squadDecayTicks: number | null = null,
+        compactRally: boolean = false,
+        fastLaunch: boolean = false,
     ) {
         super(uniqueName, logger);
-        this.squad = new CombatSquad(rallyArea, attackArea, radius);
+        this.squad = new CombatSquad(rallyArea, attackArea, radius, compactRally);
         this.requestedUnitCount = composition.maximumUnits;
         this.squadDecayTicks = squadDecayTicks;
+        this.fastLaunch = fastLaunch;
     }
 
     _onAiUpdate(context: MissionContext): MissionAction {
@@ -99,6 +103,16 @@ export class AttackMission extends Mission<AttackFailReason> {
 
         const desiredComposition = this.getDesiredComposition();
         const missingUnits = this.getMissingUnits(game, desiredComposition);
+        const assignedCount = this.getUnitIds().length;
+        if (
+            this.fastLaunch &&
+            assignedCount >= this.composition.minimumUnits &&
+            missingUnits.length > 0
+        ) {
+            this.priority = ATTACK_MISSION_INITIAL_PRIORITY;
+            this.state = AttackMissionState.Attacking;
+            return noop();
+        }
         if (missingUnits.length > 0) {
             this.priority = Math.min(this.priority * ATTACK_MISSION_PRIORITY_RAMP, ATTACK_MISSION_MAX_PRIORITY);
             // distribute the priority among the amount of missing units of each type
@@ -177,9 +191,12 @@ export class AttackMission extends Mission<AttackFailReason> {
         return this.attackArea;
     }
 
-    // This mission can give up its units while preparing.
+    // Lock units once assigned so base guard cannot strip a forming wave.
     public isUnitsLocked(): boolean {
-        return this.state !== AttackMissionState.Preparing;
+        if (this.state !== AttackMissionState.Preparing) {
+            return true;
+        }
+        return this.getUnitIds().length > 0;
     }
 
     public getPriority() {
@@ -238,10 +255,11 @@ function generateTarget(
     playerData: PlayerData,
     _matchAwareness: MatchAwareness,
     includeBaseLocations: boolean = false,
+    preferHarvesters: boolean = false,
 ): Vector2 | null {
-    // Randomly decide between harvester and base.
+    // Prefer economy disruption when harassing or when explicitly requested.
     try {
-        const tryFocusHarvester = gameApi.generateRandomInt(0, 1) === 0;
+        const tryFocusHarvester = preferHarvesters || gameApi.generateRandomInt(0, 1) === 0;
         const enemyUnits = gameApi
             .getVisibleUnits(playerData.name, "enemy")
             .map((unitId) => gameApi.getUnitData(unitId))
@@ -343,9 +361,6 @@ export class AttackMissionFactory {
         const sameWaveMissions = attackMissions.filter((mission) =>
             mission.getUniqueName().startsWith(wavePrefix),
         );
-        const otherWaveMissions = attackMissions.filter(
-            (mission) => !mission.getUniqueName().startsWith(wavePrefix),
-        );
 
         const useBatching = profile?.batchAttacks && (!profile.alternateAttackWaves || !isHarass);
         if (useBatching) {
@@ -362,19 +377,23 @@ export class AttackMissionFactory {
             if (sameWaveMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)) {
                 return;
             }
-            // Assault batching: don't stack a second large wave, but harass may still run in parallel.
-            if (
-                isHarass &&
-                profile.batchAttacks &&
-                otherWaveMissions.some((mission) => mission.getState() === AttackMissionState.Preparing)
-            ) {
-                const assaultPreparing = otherWaveMissions.find(
-                    (mission) => mission.getState() === AttackMissionState.Preparing,
-                );
-                if (assaultPreparing && assaultPreparing.getUnitIds().length >= 6) {
-                    return;
-                }
-            }
+        }
+
+        const assaultPreparing = attackMissions.filter(
+            (mission) =>
+                mission.getUniqueName().startsWith("assault_") &&
+                mission.getState() === AttackMissionState.Preparing,
+        ).length;
+        const harassPreparing = attackMissions.filter(
+            (mission) =>
+                mission.getUniqueName().startsWith("harass_") &&
+                mission.getState() === AttackMissionState.Preparing,
+        ).length;
+        if (isHarass && harassPreparing >= 1) {
+            return;
+        }
+        if (!isHarass && assaultPreparing >= 1) {
+            return;
         }
 
         // Limit concurrent preparing attacks.
@@ -390,7 +409,13 @@ export class AttackMissionFactory {
         const includeEnemyBases =
             !isHarass && game.getCurrentTick() > this.lastAttackAt + this.baseAttackCooldownTicks;
 
-        const attackArea = generateTarget(game, playerData, matchAwareness, includeEnemyBases);
+        const attackArea = generateTarget(
+            game,
+            playerData,
+            matchAwareness,
+            includeEnemyBases,
+            isHarass,
+        );
 
         if (!attackArea) {
             return;
@@ -409,6 +434,8 @@ export class AttackMissionFactory {
                 composition,
                 logger,
                 squadDecayTicks,
+                isHarass,
+                isHarass,
             ).withOnFinish((unitIds, reason) => {
                 logger(
                     `Attack ${squadName} (${wave}, ${JSON.stringify(composition)}) with ${

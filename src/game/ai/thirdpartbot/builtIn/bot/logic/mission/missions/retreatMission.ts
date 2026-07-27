@@ -37,7 +37,7 @@ export class RetreatMission extends Mission {
             // Disband automatically after 240 ticks in case we couldn't actually claim any units.
             return disbandMission();
         } else {
-            return requestSpecificUnits(this.withUnitIds, 1000);
+            return requestSpecificUnits(this.withUnitIds, 42);
         }
     }
 
@@ -46,6 +46,6 @@ export class RetreatMission extends Mission {
     }
 
     public getPriority() {
-        return 100;
+        return 40;
     }
 }

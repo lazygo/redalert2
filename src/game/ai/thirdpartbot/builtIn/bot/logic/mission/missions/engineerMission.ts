@@ -21,12 +21,13 @@ import {
 } from "./bridgeRepairUtils";
 
 const ACTION_COOLDOWN_TICKS = 30;
-const CHECK_INTERVAL_TICKS = 200;
+const CHECK_INTERVAL_TICKS = 120;
 const MAX_ATTEMPT_COUNT = 3;
 /** Give up only after this many ticks of unreachable target (not on first path check). */
 const NO_PATH_GIVE_UP_TICKS = 15 * 80;
 const MAX_CONCURRENT_CAPTURE_MISSIONS = 2;
-const CAPTURE_MISSION_PRIORITY = 100;
+/** Below assault prep max but high enough to queue engineers between infantry batches. */
+const CAPTURE_MISSION_PRIORITY = 36;
 
 enum EngineerMissionState {
     Preparing = 0,
@@ -348,9 +349,7 @@ export class EngineerMissionFactory {
         const { game } = context;
         const savage = context.botProfile?.id === "savage";
         const attacksActive = savage && hasActiveAttackMissions(context, missionController);
-        const interval = savage
-            ? Math.floor(CHECK_INTERVAL_TICKS * (attacksActive ? 0.35 : 0.65))
-            : CHECK_INTERVAL_TICKS;
+        const interval = savage ? Math.floor(CHECK_INTERVAL_TICKS * 0.5) : CHECK_INTERVAL_TICKS;
         if (!(game.getCurrentTick() > this.lastCheckAt + interval)) {
             return;
         }
