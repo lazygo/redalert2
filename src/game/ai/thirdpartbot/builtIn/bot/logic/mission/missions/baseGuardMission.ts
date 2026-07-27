@@ -1,7 +1,7 @@
 import { OrderType, SideType, UnitData, Vector2 } from "../../../../game-api";
 import { MissionContext, SupabotContext } from "../../common/context";
 import { numBuildingsOwnedOfName } from "../../building/buildingRules";
-import { DebugLogger, isOwnedByNeutral } from "../../common/utils";
+import { DebugLogger, isChinaFaction, isOwnedByNeutral } from "../../common/utils";
 import { BatchableAction } from "../actionBatcher";
 import { Mission, MissionAction, grabCombatants, noop, requestUnitsWithSamePriority } from "../mission";
 import { MissionController } from "../missionController";
@@ -27,14 +27,14 @@ const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP", "CAWEAP"];
 let designatedFillPostIndex = -1;
 
 /** Per-side full garrison quotas for one guard post. */
-function getFullGuardComposition(side: SideType): Record<string, number> {
-    switch (side) {
-        case SideType.Nod:
-            return { E2: 2, DOG: 1, HTNK: 1 };
-        case SideType.GDI:
-        default:
-            return { E1: 2, ADOG: 1, MTNK: 1 };
+function getGuardUnitNames(side: SideType, china: boolean): { infantry: string; dog: string; tank: string } {
+    if (china) {
+        return { infantry: "PLA", dog: "DOG", tank: "LTNK" };
     }
+    if (side === SideType.Nod) {
+        return { infantry: "E2", dog: "DOG", tank: "HTNK" };
+    }
+    return { infantry: "E1", dog: "ADOG", tank: "MTNK" };
 }
 
 function hasBarracks(context: MissionContext): boolean {
@@ -53,8 +53,8 @@ function hasWarFactory(context: MissionContext): boolean {
  */
 function getProgressiveGuardComposition(context: MissionContext, side: SideType): Record<string, number> {
     const tick = context.game.getCurrentTick();
-    const infantry = side === SideType.Nod ? "E2" : "E1";
-    const dog = side === SideType.Nod ? "DOG" : "ADOG";
+    const playerData = context.game.getPlayerData(context.player.name);
+    const { infantry, dog, tank } = getGuardUnitNames(side, isChinaFaction(playerData));
 
     if (!hasBarracks(context)) {
         return {};
@@ -79,7 +79,7 @@ function getProgressiveGuardComposition(context: MissionContext, side: SideType)
         case 2:
             return { [infantry]: 2, [dog]: 1 };
         default:
-            return getFullGuardComposition(side);
+            return { [infantry]: 2, [dog]: 1, [tank]: 1 };
     }
 }
 
