@@ -79,11 +79,7 @@ export function renderJsx(elements: any, intrinsicRenderers: JsxIntrinsicRendere
                 .reduce((acc, curr) => [...acc, ...curr], [])
             : [];
         if (obj && obj.add) {
-            console.log(`[renderJsx] Adding ${childObjects.length} children to parent object:`, obj.constructor.name);
             obj.add(...childObjects);
-        }
-        else {
-            console.log(`[renderJsx] Not adding children - obj:`, obj ? obj.constructor.name : 'null', 'add method:', obj?.add ? 'exists' : 'missing', 'children count:', childObjects.length);
         }
         if (refTarget && element.ref) {
             if (typeof element.ref === 'function') {
