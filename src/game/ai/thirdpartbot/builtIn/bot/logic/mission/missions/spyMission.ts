@@ -22,20 +22,28 @@ const INFILTRATE_SUCCESS_GRACE_TICKS = 90;
 const HIGH_VALUE_SPY_TARGETS = new Set([
     "GATECH",
     "NATECH",
+    "CATECH",
     "GAWEAP",
     "NAWEAP",
+    "CAWEAP",
     "GAAIRC",
     "AMRADR",
     "NARADR",
+    "CARADR",
     "GAPOWR",
     "NAPOWR",
+    "CAPOWR",
     "NANRCT",
+    "CANRCT",
     "GAPILE",
     "NAHAND",
+    "CAHAND",
     "GAREFN",
     "NAREFN",
+    "CAREFN",
     "GADEPT",
     "NADEPT",
+    "CADEPT",
 ]);
 
 enum SpyMissionState {
@@ -257,7 +265,22 @@ function pickBestSpyTarget(game: GameApi, playerName: string): number | null {
         return null;
     }
     // Prefer battle lab / war factory / radar / power.
-    const prefer = ["GATECH", "NATECH", "GAWEAP", "NAWEAP", "AMRADR", "NARADR", "GAPOWR", "NAPOWR", "NANRCT"];
+    const prefer = [
+        "GATECH",
+        "NATECH",
+        "CATECH",
+        "GAWEAP",
+        "NAWEAP",
+        "CAWEAP",
+        "AMRADR",
+        "NARADR",
+        "CARADR",
+        "GAPOWR",
+        "NAPOWR",
+        "CAPOWR",
+        "NANRCT",
+        "CANRCT",
+    ];
     for (const name of prefer) {
         const hit = targets.find((id) => game.getGameObjectData(id)?.name === name);
         if (hit != null) {

@@ -16,16 +16,22 @@ const MAX_DOG_PATROL_ROUTES = 8;
 const KEY_BUILDING_NAMES = [
     "GACNST",
     "NACNST",
+    "CACNST",
     "GAWEAP",
     "NAWEAP",
+    "CAWEAP",
     "GAPILE",
     "NAHAND",
+    "CAHAND",
     "GATECH",
     "NATECH",
+    "CATECH",
     "GAREFN",
     "NAREFN",
+    "CAREFN",
     "AMRADR",
     "NARADR",
+    "CARADR",
 ];
 
 /** Waypoints around a building — dogs loop this path to sniff out spies. */
@@ -218,6 +224,7 @@ function hasBarracks(game: GameApi, playerName: string): boolean {
     const playerData = game.getPlayerData(playerName);
     return (
         numBuildingsOwnedOfName(game, playerData, "GAPILE") > 0 ||
-        numBuildingsOwnedOfName(game, playerData, "NAHAND") > 0
+        numBuildingsOwnedOfName(game, playerData, "NAHAND") > 0 ||
+        numBuildingsOwnedOfName(game, playerData, "CAHAND") > 0
     );
 }

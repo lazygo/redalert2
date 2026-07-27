@@ -20,8 +20,8 @@ const MIN_TICKS_BEFORE_GUARDS = 15 * 25;
 /** ~40s between unlocking additional guard posts. */
 const GUARD_POST_UNLOCK_INTERVAL_TICKS = 15 * 40;
 
-const BARRACKS_NAMES = ["GAPILE", "NAHAND"];
-const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
+const BARRACKS_NAMES = ["GAPILE", "NAHAND", "CAHAND"];
+const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP", "CAWEAP"];
 
 /** Post index allowed to request barracks/warfactory production this tick (set by factory). */
 let designatedFillPostIndex = -1;

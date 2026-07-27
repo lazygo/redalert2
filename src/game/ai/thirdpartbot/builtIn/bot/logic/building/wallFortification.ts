@@ -3,15 +3,15 @@ import { numBuildingsOwnedOfName } from "./buildingRules";
 import type { BotDifficultyProfile } from "../../BotDifficultyProfile";
 import { isBrutalOrSavageProfile } from "../../BotDifficultyProfile";
 
-const WALL_NAMES = new Set(["GAWALL", "NAWALL"]);
+const WALL_NAMES = new Set(["GAWALL", "NAWALL", "CAWALL"]);
 /** How many wall segments to aim for around each construction yard. */
 const WALLS_PER_CONYARD_TARGET = 12;
 const MAX_TOTAL_WALLS = 48;
 /** Below power/refinery/barracks so walls never starve the opening build. */
 const WALL_FILL_PRIORITY = 8;
 
-const BARRACKS_NAMES = ["GAPILE", "NAHAND"];
-const REFINERY_NAMES = ["GAREFN", "NAREFN"];
+const BARRACKS_NAMES = ["GAPILE", "NAHAND", "CAHAND"];
+const REFINERY_NAMES = ["GAREFN", "NAREFN", "CAREFN"];
 
 export function isWallStructure(buildingName: string): boolean {
     return WALL_NAMES.has(buildingName);
@@ -35,6 +35,7 @@ function getExitDirection(game: GameApi, playerData: PlayerData, conyardTile: { 
             !!r.weaponsFactory ||
             r.name === "GAPILE" ||
             r.name === "NAHAND" ||
+            r.name === "CAHAND" ||
             !!r.refinery,
     );
     let best: Vector2 | null = null;

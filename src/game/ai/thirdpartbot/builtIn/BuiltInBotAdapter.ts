@@ -27,6 +27,8 @@ export class BuiltInBotAdapter extends Bot {
 
     private static readonly FAIL_SAFE_BUILD_ORDER_ALLIED = ['GAPOWR', 'GAREFN', 'GAPILE', 'GAWEAP'];
     private static readonly FAIL_SAFE_BUILD_ORDER_SOVIET = ['NAPOWR', 'NAREFN', 'NAHAND', 'NAWEAP'];
+    private static readonly FAIL_SAFE_BUILD_ORDER_CHINA = ['CAPOWR', 'CAREFN', 'CAHAND', 'CAWEAP'];
+    private static readonly CHINA_COUNTRIES = ['Confederation'];
 
     constructor(name: string, country: string, profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
         super(name, country);
@@ -195,9 +197,11 @@ export class BuiltInBotAdapter extends Bot {
             return;
         }
 
-        const buildOrder = this.isAlliedCountry(this.country)
-            ? BuiltInBotAdapter.FAIL_SAFE_BUILD_ORDER_ALLIED
-            : BuiltInBotAdapter.FAIL_SAFE_BUILD_ORDER_SOVIET;
+        const buildOrder = this.isChinaCountry(this.country)
+            ? BuiltInBotAdapter.FAIL_SAFE_BUILD_ORDER_CHINA
+            : this.isAlliedCountry(this.country)
+              ? BuiltInBotAdapter.FAIL_SAFE_BUILD_ORDER_ALLIED
+              : BuiltInBotAdapter.FAIL_SAFE_BUILD_ORDER_SOVIET;
 
         let nextBuild = buildOrder.find((name) => {
             if (!available.includes(name)) {
@@ -276,6 +280,11 @@ export class BuiltInBotAdapter extends Bot {
     private isAlliedCountry(countryName: string): boolean {
         const c = (countryName || '').toLowerCase();
         return BuiltInBotAdapter.ALLIED_COUNTRIES.some((name) => name.toLowerCase() === c);
+    }
+
+    private isChinaCountry(countryName: string): boolean {
+        const c = (countryName || '').toLowerCase();
+        return BuiltInBotAdapter.CHINA_COUNTRIES.some((name) => name.toLowerCase() === c);
     }
 
     /** Fail-safe must not spam naval yards; respect dynamic capacity like NavalYardBuilding. */
