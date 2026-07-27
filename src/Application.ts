@@ -25,6 +25,7 @@ import { browserFileSystemAccess } from './engine/gameRes/browserFileSystemAcces
 import type { TestToolRuntimeContext } from './tools/TestToolSupport';
 import { attachPerformanceOptions, installPerformanceDebugApi } from './performance/PerformanceRuntime';
 import { isMobileDevice } from './util/userAgent';
+import { enableDebugLogging } from './util/logger';
 import { ShadowQuality } from './engine/renderable/entity/unit/ShadowQuality';
 import { ModelQuality } from './engine/renderable/entity/unit/ModelQuality';
 
@@ -162,6 +163,7 @@ export class Application {
             const iniFileInstance = new IniFile(iniString);
             this.config = new Config();
             this.config.load(iniFileInstance);
+            enableDebugLogging(!!this.config.devMode);
             console.log('[Application] config.ini loaded and parsed successfully.');
             console.log('[Application] Config object dump:', this.config);
             console.log('[Application] Verification: Default Locale from config:', this.config.defaultLocale);
