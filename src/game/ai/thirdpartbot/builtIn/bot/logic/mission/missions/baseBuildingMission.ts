@@ -1,4 +1,4 @@
-import { GameApi, PlayerData, QueueType, TechnoRules } from "../../../../game-api";
+import { GameApi, PlayerData, QueueStatus, QueueType, TechnoRules } from "../../../../game-api";
 import { MissionContext } from "../../common/context";
 import { DebugLogger, maxBy } from "../../common/utils";
 import { buildStructureAtLocation, Mission, MissionAction, noop } from "../mission";
@@ -56,7 +56,43 @@ export class BaseBuildingMission extends Mission {
             }
         });
 
+        const priorityByName = new Map(optionWithPriority.map((o) => [o.option.name, o.priority]));
         const bestOption = maxBy(optionWithPriority, (option) => option.priority);
+
+        // Stick with in-progress construction so top-pick flips (e.g. NAPOWR↔NANRCT)
+        // don't cancel / restart the Structures queue every tick.
+        const queueData = context.player.production.getQueueData(this.queueType);
+        const inProgress = queueData.items[0]?.rules;
+        if (
+            inProgress &&
+            (queueData.status === QueueStatus.Active || queueData.status === QueueStatus.Ready)
+        ) {
+            const inProgressPriority = priorityByName.get(inProgress.name) ?? 0;
+            const stickWithInProgress =
+                queueData.status === QueueStatus.Ready ||
+                (inProgressPriority > 0 &&
+                    (!bestOption ||
+                        bestOption.option.name === inProgress.name ||
+                        bestOption.priority <= inProgressPriority * 2));
+
+            if (stickWithInProgress) {
+                let location: { rx: number; ry: number } | undefined;
+                try {
+                    location = this.getBestLocationForStructure(game, playerData, inProgress, context);
+                } catch (err) {
+                    this.logger(`Building placement error for ${inProgress.name}: ${err}`);
+                    return noop();
+                }
+                if (location) {
+                    return buildStructureAtLocation(
+                        inProgress.name,
+                        Math.max(inProgressPriority, 1),
+                        location.rx,
+                        location.ry,
+                    );
+                }
+            }
+        }
 
         // Only positive priorities may enter the production queue.
         if (!bestOption || bestOption.priority <= 0) {

@@ -156,13 +156,10 @@ export class QueueController {
                 const readyUnit = queueData.items[0].rules;
                 const currentRequest = unitTypeRequests.get(readyUnit.name);
                 if (!currentRequest) {
-                    // No one is requesting this anymore, cancel
-                    logger(`Cancelling ready ${readyUnit.name} because no one is requesting anymore`);
-                    actionsApi.unqueueFromProduction(queueType, readyUnit.name, readyUnit.type, 1);
-                    this.placementFailures.delete(readyUnit.name);
-                    return;
-                }
-                if (!currentRequest.specificLocation) {
+                    // Keep requesting via sticky BaseBuildingMission; do not cancel a Ready build
+                    // just because top-pick flipped this tick.
+                    // Fall through to placement using a fresh default location below if needed.
+                } else if (!currentRequest.specificLocation) {
                     // No one is requesting this anymore, cancel
                     logger(`Cancelling ready ${readyUnit.name} because location is unspecified`);
                     actionsApi.unqueueFromProduction(queueType, readyUnit.name, readyUnit.type, 1);
@@ -180,8 +177,29 @@ export class QueueController {
                     return;
                 }
 
-                let placeX = currentRequest.specificLocation.x;
-                let placeY = currentRequest.specificLocation.y;
+                let placeX = currentRequest?.specificLocation?.x;
+                let placeY = currentRequest?.specificLocation?.y;
+
+                if (placeX === undefined || placeY === undefined) {
+                    const conYards = game.getVisibleUnits(playerData.name, "self", (r: TechnoRules) => r.constructionYard);
+                    const conYardData = conYards.length > 0 ? game.getUnitData(conYards[0]) : undefined;
+                    const altLocation = conYardData?.tile
+                        ? getDefaultPlacementLocation(
+                              game,
+                              playerData,
+                              new Vector2(conYardData.tile.rx, conYardData.tile.ry),
+                              readyUnit,
+                          )
+                        : undefined;
+                    if (!altLocation) {
+                        logger(`Cancelling ready ${readyUnit.name} because no one is requesting anymore`);
+                        actionsApi.unqueueFromProduction(queueType, readyUnit.name, readyUnit.type, 1);
+                        this.placementFailures.delete(readyUnit.name);
+                        return;
+                    }
+                    placeX = altLocation.rx;
+                    placeY = altLocation.ry;
+                }
 
                 // Check if the suggested location is valid
                 const canPlace = game.canPlaceBuilding(playerData.name, readyUnit.name, { rx: placeX, ry: placeY });
@@ -223,9 +241,14 @@ export class QueueController {
 
             const currentProduction = queueData.items[0].rules;
             if (decision.unit != currentProduction) {
-                // Changing our mind.
                 const currentRequest = unitTypeRequests.get(currentProduction.name);
-                const currentItemPriority = currentRequest ? currentRequest.priority : 0;
+                // Missing request used to count as priority 0 → any positive top pick
+                // canceled mid-build every tick (NAPOWR↔NANRCT thrash). Stick unless
+                // the mission still requests the current item at a much lower priority.
+                if (!currentRequest) {
+                    return;
+                }
+                const currentItemPriority = currentRequest.priority;
                 const newItemPriority = decision.priority;
                 if (newItemPriority > currentItemPriority * 2) {
                     logger(

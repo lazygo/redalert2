@@ -105,13 +105,6 @@ export class PaletteBasicMaterial extends THREE.MeshBasicMaterial {
                 fragmentShader: shader.fragmentShader,
                 uniforms: Object.keys(shader.uniforms),
             };
-            console.log('[PaletteBasicMaterial] compiled', {
-                type: this.type,
-                hasMap: !!this.map,
-                defines: this.defines,
-                hasColorFragmentInclude: shader.fragmentShader.includes('#include <color_fragment>'),
-                hasPaletteColorIndex: shader.fragmentShader.includes('paletteColorIndex'),
-            });
         };
         this.needsUpdate = true;
     }
