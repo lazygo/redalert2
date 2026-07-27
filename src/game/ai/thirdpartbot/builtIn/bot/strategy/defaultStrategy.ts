@@ -20,6 +20,7 @@ import {
 } from "../BotDifficultyProfile";
 import type { GlobalThreat } from "../logic/threat/threat";
 import { AttackWaveKind, AttackWavePlanner } from "./attackWavePlanner";
+import { StrategicFocusPlanner } from "./strategicFocusPlanner";
 
 const DEFAULT_COMPOSITIONS: Compositions = {
     conscripts: {
@@ -233,15 +234,17 @@ export class DefaultStrategy implements Strategy {
     private defenceFactory = new DefenceMissionFactory();
     private engineerFactory = new EngineerMissionFactory();
     private baseGuardFactory = new BaseGuardMissionFactory();
-    private mcvReserveFactory = new McvReserveMissionFactory();
+    private mcvReserveFactory: McvReserveMissionFactory;
     private spyFactory = new SpyMissionFactory();
     private wavePlanner = new AttackWavePlanner();
+    private focusPlanner = new StrategicFocusPlanner();
 
     constructor(private profile: BotDifficultyProfile = SIMPLE_BOT_PROFILE) {
         this.expansionFactory = new ExpansionMissionFactory(
             Number.MIN_VALUE,
             profile.expandBeforeTicks,
             profile.conyardPackCooldownTicks,
+            this.focusPlanner,
         );
         this.attackFactory = new AttackMissionFactory(
             -profile.visibleAttackCooldownTicks,
@@ -249,7 +252,9 @@ export class DefaultStrategy implements Strategy {
             profile.baseAttackCooldownTicks,
             profile.maxPreparingAttacks,
             this.wavePlanner,
+            this.focusPlanner,
         );
+        this.mcvReserveFactory = new McvReserveMissionFactory(this.focusPlanner);
     }
 
     onAiUpdate(context: SupabotContext, missionController: MissionController, logger: DebugLogger) {
@@ -257,6 +262,8 @@ export class DefaultStrategy implements Strategy {
         if (!context.botProfile) {
             (context as { botProfile?: BotDifficultyProfile }).botProfile = this.profile;
         }
+
+        this.focusPlanner.onTick(context, missionController);
 
         this.expansionFactory.maybeCreateMissions(context, missionController, logger);
         this.mcvReserveFactory.maybeCreateMissions(context, missionController, logger);

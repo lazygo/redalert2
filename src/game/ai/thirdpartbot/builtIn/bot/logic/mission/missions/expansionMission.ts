@@ -29,9 +29,7 @@ import { ActionBatcher } from "../actionBatcher";
 import { getCachedTechnoRules } from "../../common/rulesCache";
 import { canBuildOnTile } from "../../common/tileUtils";
 import { MissionContext, SupabotContext } from "../../common/context";
-import {
-    getDesiredMobileMcvCount,
-} from "./mcvReserveMission";
+import type { StrategicFocusPlanner } from "../../../strategy/strategicFocusPlanner";
 
 const ORDER_COOLDOWN_TICKS = 60;
 
@@ -316,6 +314,7 @@ export class ExpansionMissionFactory {
         private lastConyardPackAt = Number.MIN_VALUE,
         private expandBeforeTicks: number = DO_NOT_EXPAND_BEFORE_TICKS_DEFAULT,
         private conyardPackCooldownTicks: number = CONYARD_PACK_COOLDOWN_DEFAULT,
+        private focusPlanner?: StrategicFocusPlanner,
     ) {}
     getName(): string {
         return "ExpansionMissionFactory";
@@ -326,8 +325,6 @@ export class ExpansionMissionFactory {
         const playerData = game.getPlayerData(player.name);
         const mcvs = game.getVisibleUnits(player.name, "self", (r) => game.getGeneralRules().baseUnit.includes(r.name));
         const expandToCandidates = matchAwareness.getNextExpansionCandidates();
-        const savage = context.botProfile?.fortifyBase === true;
-        const desiredMcvs = savage ? getDesiredMobileMcvCount(game, playerData) : 0;
 
         // This is used for deploying the initial MCV.
         if (game.getCurrentTick() < this.expandBeforeTicks) {
@@ -337,16 +334,16 @@ export class ExpansionMissionFactory {
                 );
             });
         } else if (expandToCandidates.length > 0) {
-            mcvs.forEach((mcv) => {
-                missionController.addMission(
-                    new ExpansionMission("expansion-mcv-" + mcv, 100, mcv, expandToCandidates, logger),
-                );
-            });
-            // Savage: queue expansion for MCVs still being produced toward the reserve target.
-            if (savage && mcvs.length < desiredMcvs) {
-                missionController.addMission(
-                    new ExpansionMission("expansion-mcv-pending", 100, null, expandToCandidates, logger),
-                );
+            const savage = context.botProfile?.fortifyBase === true;
+            const allowExpansion =
+                !savage || (this.focusPlanner?.shouldInvestInExpansion(context) ?? false);
+
+            if (allowExpansion) {
+                mcvs.forEach((mcv) => {
+                    missionController.addMission(
+                        new ExpansionMission("expansion-mcv-" + mcv, 100, mcv, expandToCandidates, logger),
+                    );
+                });
             }
         }
 
@@ -380,6 +377,10 @@ export class ExpansionMissionFactory {
             .filter(isTechnoRulesObject)
             .filter((obj) => obj.rules.refinery);
         if (refineryNearconyard.length > 0) {
+            const savage = context.botProfile?.fortifyBase === true;
+            if (savage && this.focusPlanner && !this.focusPlanner.shouldPackConyardToExpand(context)) {
+                return;
+            }
             missionController.addMission(
                 new PackConyardMission("pack-up-" + selectedConyard.id, selectedConyard.id, logger),
             );
