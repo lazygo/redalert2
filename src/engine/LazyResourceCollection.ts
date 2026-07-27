@@ -4,6 +4,7 @@ export class LazyResourceCollection<T> {
     private resourceFactory: (file: VirtualFile) => T;
     private resources: Map<string, T> = new Map();
     private vfs?: VirtualFileSystem;
+    private missingKeysLogged = new Set<string>();
     constructor(resourceFactory: (file: VirtualFile) => T) {
         this.resourceFactory = resourceFactory;
     }
@@ -48,7 +49,13 @@ export class LazyResourceCollection<T> {
             }
             else {
                 try {
-                    console.warn('[LazyResourceCollection.get] not found in VFS', { key, archives: this.vfs?.listArchives?.() });
+                    if (!this.missingKeysLogged.has(key)) {
+                        this.missingKeysLogged.add(key);
+                        console.warn('[LazyResourceCollection.get] not found in VFS', {
+                            key,
+                            archives: this.vfs?.listArchives?.(),
+                        });
+                    }
                 }
                 catch { }
             }
