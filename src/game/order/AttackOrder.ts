@@ -96,7 +96,16 @@ export class AttackOrder extends Order {
             return true;
         }
         this.isC4 = false;
-        this.feedbackType = OrderFeedbackType.Attack;
+        if (
+            this.sourceObject.rules.fighter &&
+            targetObj?.isTechno?.() &&
+            this.game.isValidTarget(targetObj)
+        ) {
+            this.feedbackType = OrderFeedbackType.SelectTarget;
+        }
+        else {
+            this.feedbackType = OrderFeedbackType.Attack;
+        }
         if (!this.game.isValidTarget(targetObj))
             return false;
         if (!targetObj && terrainObj?.rules.immune)

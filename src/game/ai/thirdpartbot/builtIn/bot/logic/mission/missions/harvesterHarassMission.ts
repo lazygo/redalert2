@@ -1,4 +1,9 @@
-import { GameApi, OrderType, PlayerData, UnitData, Vector2, SideType } from "../../../../game-api";
+import { GameApi, PlayerData, SideType, UnitData, Vector2 } from "../../../../game-api";
+import { DebugLogger } from "../../common/utils";
+import { MissionContext, SupabotContext } from "../../common/context";
+import { Mission, MissionAction, disbandMission, noop, requestUnitsWithSamePriority } from "../mission";
+import { MissionController } from "../missionController";
+import { manageAttackMicro, manageMoveMicro } from "./squads/common";
 
 const CHECK_COOLDOWN_TICKS = 40;
 const MISSION_TIMEOUT_TICKS = 15 * 45;
@@ -9,6 +14,8 @@ const HARASS_FILL_PRIORITY = 38;
 const LIGHT_HARASS_UNITS: Record<SideType, string[]> = {
     [SideType.GDI]: ["E1", "FV", "MTNK"],
     [SideType.Nod]: ["E2", "HTK", "HTNK"],
+    [SideType.Civilian]: [],
+    [SideType.Mutant]: []
 };
 
 /**

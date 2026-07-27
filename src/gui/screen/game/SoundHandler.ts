@@ -277,11 +277,20 @@ export class SoundHandler {
         }
     }
     handleOrderPushed(unit: any, _orderType: any, feedbackType: OrderFeedbackType): void {
-        if (!unit || feedbackType === OrderFeedbackType.None) {
+        if (feedbackType === OrderFeedbackType.None) {
             return;
         }
         const now = Date.now();
         if (this.lastFeedbackTime && now - this.lastFeedbackTime < 250) {
+            return;
+        }
+        const eva = this.resolveOrderFeedbackEva(feedbackType);
+        if (eva) {
+            this.eva.play(eva);
+            this.lastFeedbackTime = now;
+            return;
+        }
+        if (!unit) {
             return;
         }
         const sound = this.resolveOrderFeedbackVoice(unit, feedbackType);
@@ -290,12 +299,22 @@ export class SoundHandler {
             this.lastFeedbackTime = now;
         }
     }
+    private resolveOrderFeedbackEva(feedbackType: OrderFeedbackType): string | undefined {
+        switch (feedbackType) {
+            case OrderFeedbackType.RallyPoint:
+                return 'EVA_NewRallyPointEstablished';
+            case OrderFeedbackType.SelectTarget:
+                return 'EVA_SelectTarget';
+            default:
+                return undefined;
+        }
+    }
     private resolveOrderFeedbackVoice(unit: any, feedbackType: OrderFeedbackType): string | undefined {
         switch (feedbackType) {
             case OrderFeedbackType.Attack:
-                return unit.rules.voiceAttack || this.resolveFactoryVoice(unit, 'voiceAttack');
+                return unit.rules.voiceAttack;
             case OrderFeedbackType.Move:
-                return unit.rules.voiceMove || this.resolveFactoryVoice(unit, 'voiceMove');
+                return unit.rules.voiceMove;
             case OrderFeedbackType.Capture:
                 return unit.rules.voiceCapture || unit.rules.voiceSpecialAttack;
             case OrderFeedbackType.SpecialAttack:
@@ -305,25 +324,6 @@ export class SoundHandler {
             default:
                 return undefined;
         }
-    }
-    private resolveFactoryVoice(building: any, voiceField: 'voiceMove' | 'voiceAttack'): string | undefined {
-        if (!building?.isBuilding?.() || !building.factoryTrait || !this.player?.production) {
-            return undefined;
-        }
-        const queue = this.player.production.getQueueForFactory(building.factoryTrait.type);
-        const queuedVoice = queue?.getFirst()?.rules?.[voiceField];
-        if (queuedVoice) {
-            return queuedVoice;
-        }
-        for (const rules of this.player.production.getAvailableObjects()) {
-            if (this.player.production.getFactoryTypeFor(rules) !== building.factoryTrait.type) {
-                continue;
-            }
-            if (rules[voiceField]) {
-                return rules[voiceField];
-            }
-        }
-        return undefined;
     }
     handleAvailableObjectsUpdate(availableObjects: any[]): void {
         if (!this.player) {
