@@ -18,8 +18,6 @@ import {
     MissionAction,
     disbandMission,
     noop,
-    requestSpecificUnits,
-    requestUnits,
     requestUnitsWithSamePriority,
 } from "../mission";
 import { MatchAwareness } from "../../awareness";
@@ -71,16 +69,29 @@ export class ExpansionMission extends Mission {
         const actionsApi = context.player.actions;
         const playerData = context.game.getPlayerData(context.player.name);
         const mcvs = this.getUnitsOfTypes(game, ...mcvTypes);
+
         if (mcvs.length === 0) {
-            // Perhaps we deployed already (or the unit was destroyed), end the mission.
-            if (this.lastOrderAt !== null) {
+            // MCV deployed into a conyard, was destroyed, or was deployed by another system
+            // (e.g. BuiltInBot.tryInitialMcvDeploy) before we issued orders.
+            // Never keep a zombie mission that requests AMCV/SMCV at priority 100 — that
+            // pauses structure queues and freezes the entire base build-out.
+            if (this.selectedMcvId !== null || this.lastOrderAt !== null) {
                 return disbandMission();
             }
-            // We need an mcv!
-            if (this.selectedMcvId && !!game.getUnitData(this.selectedMcvId)) {
-                return requestSpecificUnits([this.selectedMcvId], this.priority);
+            if (this.getUniqueName().startsWith("initial-deploy-")) {
+                return disbandMission();
             }
-            return requestUnitsWithSamePriority(mcvTypes, this.priority);
+            // Genuine expansion: still need an MCV produced.
+            // Cap request priority — priority 100 pauses Structures when Vehicles
+            // can build AMCV and credits are tight (wood-post freeze).
+            const hasConyard =
+                game.getVisibleUnits(playerData.name, "self", (r) => !!r.constructionYard).length > 0;
+            if (!hasConyard) {
+                // No base at all — give up rather than spam MCV requests.
+                return disbandMission();
+            }
+            const producePriority = Math.min(this.priority, 40);
+            return requestUnitsWithSamePriority(mcvTypes, producePriority);
         }
 
         // use the highest-hp MCV
@@ -278,6 +289,8 @@ function findDeployableLocations(playerName: string, gameApi: GameApi, rectangle
 }
 
 export class PackConyardMission extends Mission {
+    private packOrdered = false;
+
     constructor(
         uniqueName: string,
         private conyardId: number,
@@ -291,10 +304,19 @@ export class PackConyardMission extends Mission {
         const actionsApi = context.player.actions;
         const conyardOrMcv = game.getGameObjectData(this.conyardId);
         if (!conyardOrMcv) {
-            // maybe it died, or unpacked already
             return disbandMission();
         }
+
+        // Once packed into an MCV, stop issuing orders — ExpansionMission takes over.
+        const stillConyard = !!(conyardOrMcv.rules as { constructionYard?: boolean })?.constructionYard;
+        if (!stillConyard || this.packOrdered) {
+            return disbandMission();
+        }
+
+        // Undeploy: order Move on the construction yard tile.
         actionsApi.orderUnits([this.conyardId], OrderType.Move, conyardOrMcv.tile.rx, conyardOrMcv.tile.ry);
+        this.packOrdered = true;
+        this.logger(`Pack order issued for conyard ${this.conyardId}`);
         return noop();
     }
 
@@ -328,10 +350,12 @@ export class ExpansionMissionFactory {
         const expandToCandidates = matchAwareness.getNextExpansionCandidates();
 
         // This is used for deploying the initial MCV.
+        // Priority only matters for grabbing an existing MCV — never for production
+        // (ExpansionMission caps produce requests; zombies disband after deploy).
         if (game.getCurrentTick() < this.expandBeforeTicks) {
             mcvs.forEach((mcv) => {
                 missionController.addMission(
-                    new ExpansionMission("initial-deploy-mcv-" + mcv, 100, mcv, [playerData.startLocation], logger),
+                    new ExpansionMission("initial-deploy-mcv-" + mcv, 50, mcv, [playerData.startLocation], logger),
                 );
             });
         } else if (expandToCandidates.length > 0) {
@@ -341,8 +365,15 @@ export class ExpansionMissionFactory {
 
             if (allowExpansion) {
                 mcvs.forEach((mcv) => {
+                    const name = "expansion-mcv-" + mcv;
+                    if (missionController.getMissions().some((m) => m.getUniqueName() === name)) {
+                        return;
+                    }
                     missionController.addMission(
-                        new ExpansionMission("expansion-mcv-" + mcv, 100, mcv, expandToCandidates, logger),
+                        new ExpansionMission(name, 45, mcv, expandToCandidates, logger).withOnFinish(() => {
+                            this.focusPlanner?.onExpansionCommitted(context);
+                            logger(`Expansion deployed via MCV ${mcv}`, false);
+                        }),
                     );
                 });
             }
@@ -359,17 +390,41 @@ export class ExpansionMissionFactory {
         ) {
             return;
         }
-        // TODO: do not pack up if currently producing something from the conyard
 
-        // if we have a war factory and at least 1 refinery, try expand
+        // Prefer factory-built MCVs. Never pack the last/only construction yard —
+        // that freezes all building (tech, defenses) and causes pack→drive→redeploy loops.
         const conYards = game.getVisibleUnits(player.name, "self", (r) => r.constructionYard);
+        const mobileMcvs = game.getVisibleUnits(
+            player.name,
+            "self",
+            (r) => game.getGeneralRules().baseUnit.includes(r.name),
+        );
+        if (conYards.length <= 1) {
+            return;
+        }
+        if (mobileMcvs.length > 0) {
+            return;
+        }
+        const packingOrExpanding = missionController
+            .getMissions()
+            .some(
+                (m) =>
+                    m.getUniqueName().startsWith("pack-up-") ||
+                    m.getUniqueName().startsWith("expansion-mcv-"),
+            );
+        if (packingOrExpanding) {
+            return;
+        }
+
         const warFactories = game.getVisibleUnits(player.name, "self", (r) => r.weaponsFactory);
         const isSafeToExpand = threatCache.totalAvailableAntiGroundFirepower > threatCache.totalOffensiveLandThreat;
         const refineries = game.getVisibleUnits(player.name, "self", (r) => r.refinery);
-        if (conYards.length === 0 || warFactories.length === 0 || refineries.length === 0 || !isSafeToExpand) {
+        if (warFactories.length === 0 || refineries.length === 0 || !isSafeToExpand) {
             return;
         }
-        const selectedConyard = game.getGameObjectData(conYards[0])!;
+
+        // Pack a non-primary conyard only when we already have 2+ bases.
+        const selectedConyard = game.getGameObjectData(conYards[conYards.length - 1])!;
         const refineryNearconyard = game
             .getUnitsInArea(
                 new Box2(toVector2(selectedConyard.tile).subScalar(10), toVector2(selectedConyard.tile).addScalar(14)),
@@ -382,12 +437,17 @@ export class ExpansionMissionFactory {
             if (savage && this.focusPlanner && !this.focusPlanner.shouldPackConyardToExpand(context)) {
                 return;
             }
-            missionController.addMission(
+            // Savage/grand-assault: expand via war-factory MCV only — never pack.
+            if (savage || context.botProfile?.grandAssaultMode) {
+                return;
+            }
+            const added = missionController.addMission(
                 new PackConyardMission("pack-up-" + selectedConyard.id, selectedConyard.id, logger),
             );
-            this.focusPlanner?.onExpansionCommitted(context);
-            logger("Time to pack the conyard and expand", false);
-            this.lastConyardPackAt = game.getCurrentTick();
+            if (added) {
+                logger("Time to pack the conyard and expand", false);
+                this.lastConyardPackAt = game.getCurrentTick();
+            }
         } else {
             logger("Not time to pack up, no refinery yet");
         }

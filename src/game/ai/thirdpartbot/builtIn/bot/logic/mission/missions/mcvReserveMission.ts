@@ -11,8 +11,8 @@ const WAR_FACTORY_NAMES = ["GAWEAP", "NAWEAP"];
 export const MCV_UNIT_NAMES = ["AMCV", "SMCV"] as const;
 const ABSOLUTE_MAX_MOBILE_MCVS = 2;
 
-/** Low priority — combat units and attacks must win the war factory queue. */
-const MCV_RESERVE_PRIORITY = 10;
+/** During expand windows MCV must outrank harass fill (~38) but stay below oil/spy. */
+const MCV_RESERVE_PRIORITY = 48;
 
 export function hasRepairDepot(game: GameApi, playerData: PlayerData): boolean {
     return REPAIR_DEPOT_NAMES.some((name) => numBuildingsOwnedOfName(game, playerData, name) > 0);

@@ -54,17 +54,27 @@ export class GameApi {
         return this.game.alliances.areAllied(player1, player2);
     }
     canPlaceBuilding(playerName: string, arg2: any, arg3: any): boolean {
-        const player = this.game.getPlayerByName(playerName);
-        if (!player)
-            throw new Error(`Player "${playerName}" doesn't exist`);
-        // Backward/forward compatible with both signatures:
-        // canPlaceBuilding(playerName, position, buildingType)
-        // canPlaceBuilding(playerName, buildingType, position)
-        const buildingType = typeof arg2 === 'string' ? arg2 : arg3;
-        const position = typeof arg2 === 'string' ? arg3 : arg2;
-        return this.game
-            .getConstructionWorker(player)
-            .canPlaceAt(buildingType, position, { normalizedTile: true });
+        try {
+            const player = this.game.getPlayerByName(playerName);
+            if (!player) {
+                return false;
+            }
+            // Backward/forward compatible with both signatures:
+            // canPlaceBuilding(playerName, position, buildingType)
+            // canPlaceBuilding(playerName, buildingType, position)
+            const buildingType = typeof arg2 === "string" ? arg2 : arg3;
+            const position = typeof arg2 === "string" ? arg3 : arg2;
+            if (!buildingType || !position) {
+                return false;
+            }
+            const worker = this.game.constructionWorkers?.get(player);
+            if (!worker?.canPlaceAt) {
+                return false;
+            }
+            return !!worker.canPlaceAt(buildingType, position, { normalizedTile: true });
+        } catch {
+            return false;
+        }
     }
     getBuildingPlacementData(buildingType: string): BuildingPlacementData {
         const buildingData = this.game.art.getObject(buildingType, ObjectType.Building);
@@ -124,8 +134,11 @@ export class GameApi {
             .map((obj: any) => obj.id);
     }
     getNeutralUnits(filter: (rules: any) => boolean = () => true): any[] {
-        return this.game
-            .getCivilianPlayer()
+        const civilian = this.game.getCivilianPlayer?.();
+        if (!civilian?.getOwnedObjects) {
+            return [];
+        }
+        return civilian
             .getOwnedObjects()
             .filter((obj: any) => filter(obj.rules))
             .map((obj: any) => obj.id);
