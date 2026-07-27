@@ -47,7 +47,10 @@ export class MeshBatchManager extends RenderableContainer {
         return meshes;
     }
     private fillBatches(groupedMeshes: Map<string, BatchedMesh[]>): Map<string, number> {
-        const usedBatchCounts = new Map<string, number>([...this.batches.keys()].map(key => [key, 0]));
+        const usedBatchCounts = new Map<string, number>();
+        for (const key of this.batches.keys()) {
+            usedBatchCounts.set(key, 0);
+        }
         for (const [batchKey, meshes] of groupedMeshes) {
             let batchArray = this.batches.get(batchKey);
             let batchIndex = 0;

@@ -158,31 +158,50 @@ export class GameApi {
                 .filter((obj: any) => filter(obj.rules))
                 .map((obj: any) => obj.id);
         }
-        let visibilityFilter: (obj: any) => boolean;
+
+        // Iterate owners' technos instead of cloning the entire World (projectiles/debris/etc.).
+        const results: number[] = [];
         if (type === "allied") {
-            visibilityFilter = (obj: any) => obj.owner === player ||
-                this.game.alliances.areAllied(obj.owner, player);
+            for (const other of this.game.getCombatants()) {
+                if (other === player || !this.game.alliances.areAllied(other, player)) {
+                    continue;
+                }
+                for (const obj of other.getOwnedObjects()) {
+                    if (!obj.isTechno() || obj.isDestroyed || !filter(obj.rules)) {
+                        continue;
+                    }
+                    results.push(obj.id);
+                }
+            }
+            return results;
         }
-        else if (type === "hostile" || type === "enemy") {
+
+        if (type === "hostile" || type === "enemy") {
             const playerShroud = this.game.mapShroudTrait.getPlayerShroud(player);
-            visibilityFilter = (obj: any) => this.game.map.tileOccupation
-                .calculateTilesForGameObject(obj.tile, obj)
-                .some((tile: any) => !playerShroud?.isShrouded(tile, obj.tileElevation)) &&
-                obj.owner !== player &&
-                !this.game.alliances.areAllied(obj.owner, player) &&
-                (type !== "enemy" || obj.owner.isCombatant());
+            const owners = type === "enemy" ? this.game.getCombatants() : this.game.getAllPlayers();
+            for (const other of owners) {
+                if (other === player || this.game.alliances.areAllied(other, player)) {
+                    continue;
+                }
+                if (type === "enemy" && !other.isCombatant()) {
+                    continue;
+                }
+                for (const obj of other.getOwnedObjects()) {
+                    if (!obj.isTechno() || obj.isDestroyed || !filter(obj.rules)) {
+                        continue;
+                    }
+                    const visible = this.game.map.tileOccupation
+                        .calculateTilesForGameObject(obj.tile, obj)
+                        .some((tile: any) => !playerShroud?.isShrouded(tile, obj.tileElevation));
+                    if (visible) {
+                        results.push(obj.id);
+                    }
+                }
+            }
+            return results;
         }
-        else {
-            throw new Error("Unexpected type " + type);
-        }
-        return this.game
-            .getWorld()
-            .getAllObjects()
-            .filter((obj: any) => obj.isTechno() &&
-            !obj.isDestroyed &&
-            visibilityFilter(obj) &&
-            filter(obj.rules))
-            .map((obj: any) => obj.id);
+
+        throw new Error("Unexpected type " + type);
     }
     getGameObjectData(objectId: any): GameObjectData | undefined {
         if (this.game.getWorld().hasObjectId(objectId)) {
