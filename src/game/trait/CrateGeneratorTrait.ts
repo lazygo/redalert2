@@ -326,10 +326,9 @@ export class CrateGeneratorTrait implements NotifyTick {
                         const rule = gameState.rules.getObject(unitName, ObjectType.Vehicle);
                         return rule.isAvailableTo(player.country) && rule.hasOwner(player.country);
                     });
-                    if (!suitableMCV) {
-                        throw new Error(`No suitable MCV found for player country ${player.country?.name}`);
+                    if (suitableMCV) {
+                        unitRule = gameState.rules.getObject(suitableMCV, ObjectType.Vehicle);
                     }
-                    unitRule = gameState.rules.getObject(suitableMCV, ObjectType.Vehicle);
                 }
             }
         }

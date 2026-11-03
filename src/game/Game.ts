@@ -686,7 +686,7 @@ export class Game {
     }
     destroyObject(obj: any, killer?: any, silent: boolean = false, skipEvents: boolean = false) {
         if (obj.isDestroyed) {
-            throw new Error(`Object with ID "${obj.id}" is already destroyed`);
+            return;
         }
         if (obj.isTechno()) {
             const originalOwner = obj.mindControllableTrait?.getOriginalOwner() ?? obj.owner;
@@ -733,10 +733,9 @@ export class Game {
             this.unspawnObject(obj);
         }
         else if (obj.isTechno() && obj.owner) {
-            if (!obj.limboData) {
-                throw new Error(`Object with ID "${obj.id}" should be in limbo but has no limboData`);
+            if (obj.limboData) {
+                obj.owner.removeOwnedObject(obj);
             }
-            obj.owner.removeOwnedObject(obj);
         }
         obj.dispose();
     }

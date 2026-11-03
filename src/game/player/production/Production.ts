@@ -206,10 +206,7 @@ export class Production {
         this.factoryCounts.set(type, (this.factoryCounts.get(type) ?? 0) + 1);
     }
     decrementFactoryCount(type: FactoryType) {
-        if (!this.factoryCounts.get(type)) {
-            throw new Error(`Can't decrement factory count ${FactoryType[type]}. Already 0`);
-        }
-        this.factoryCounts.set(type, this.factoryCounts.get(type)! - 1);
+        this.factoryCounts.set(type, Math.max(0, (this.factoryCounts.get(type) ?? 0) - 1));
     }
     getFactoryCount(type: FactoryType): number {
         return this.factoryCounts.get(type) ?? 0;

@@ -14,6 +14,7 @@ import { OBS_COUNTRY_ID } from '@/game/gameopts/constants';
 import { MapFile } from '@/data/MapFile';
 import { PregameController, PregameMapSelectionResult } from '@/gui/screen/mainMenu/lobby/PregameController';
 import { BotRegistry } from '@/game/ai/thirdpartbot/BotRegistry';
+import { DownloadError, ResourceNotFoundError } from '@/network/HttpRequest';
 
 interface GameMode {
     id: number;
@@ -149,9 +150,11 @@ export class SkirmishScreen extends MainMenuScreen {
         catch (error) {
             this.handleError(
                 error,
-                (error as any)?.name === 'DownloadError'
-                    ? this.strings.get('TXT_DOWNLOAD_FAILED')
-                    : this.strings.get('WOL:MatchErrorCreatingGame')
+                error instanceof ResourceNotFoundError
+                    ? `地图加载失败：${error.message}`
+                    : error instanceof DownloadError
+                        ? this.strings.get('TXT_DOWNLOAD_FAILED')
+                        : this.strings.get('WOL:MatchErrorCreatingGame')
             );
             return;
         }

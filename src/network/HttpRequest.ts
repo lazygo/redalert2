@@ -7,6 +7,20 @@ export class DownloadError extends Error {
         this.statusCode = statusCode;
     }
 }
+/**
+ * Thrown when the server responds with an HTML page for a non-HTML request.
+ * In practice this means the URL fell through to the SPA index.html fallback,
+ * i.e. the requested file does not exist on the server (missing deployment
+ * asset), rather than an actual network failure.
+ */
+export class ResourceNotFoundError extends DownloadError {
+    public url: string;
+    constructor(url: string, contentType: string, status: number) {
+        super(`资源不存在：${url}（服务器返回了 "${contentType}" 页面而非文件内容，通常是该文件未部署或路径错误）`, undefined, status);
+        this.name = "ResourceNotFoundError";
+        this.url = url;
+    }
+}
 interface FetchOptions {
     body?: BodyInit | null;
     method?: string;
@@ -68,7 +82,7 @@ export class HttpRequest {
         }
         const contentType = response.headers.get("Content-Type");
         if (contentType && contentType.includes("text/html") && !options?.allowHtmlMimeType) {
-            throw new DownloadError(`Fetch failed with invalid mime type "${contentType}" (HTTP status ${response.status})`);
+            throw new ResourceNotFoundError(url, contentType, response.status);
         }
         if (!response.body) {
             throw new DownloadError("Response has no body.");

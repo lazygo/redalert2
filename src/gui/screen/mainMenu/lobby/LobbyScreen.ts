@@ -12,7 +12,7 @@ import { ScreenType } from "@/gui/screen/mainMenu/ScreenType";
 import { CompositeDisposable } from "@/util/disposable/CompositeDisposable";
 import { jsx } from "@/gui/jsx/jsx";
 import { HtmlView } from "@/gui/jsx/HtmlView";
-import { DownloadError } from "@/engine/ResourceLoader";
+import { DownloadError, ResourceNotFoundError } from "@/network/HttpRequest";
 import { CancellationTokenSource, OperationCanceledError } from "@puzzl/core/lib/async/cancellation";
 import { MapPreviewRenderer } from "@/gui/screen/mainMenu/lobby/MapPreviewRenderer";
 import { findIndexReverse } from "@/util/array";
@@ -562,9 +562,11 @@ export class LobbyScreen extends MainMenuScreen {
                 }, 5000);
             }
             catch (error) {
-                this.handleError(error, error instanceof DownloadError
-                    ? this.strings.get("TXT_DOWNLOAD_FAILED")
-                    : this.strings.get("WOL:MatchBadParameters"));
+                this.handleError(error, error instanceof ResourceNotFoundError
+                    ? `地图加载失败：${error.message}`
+                    : error instanceof DownloadError
+                        ? this.strings.get("TXT_DOWNLOAD_FAILED")
+                        : this.strings.get("WOL:MatchBadParameters"));
                 return;
             }
             this.controller.toggleSidebarPreview(true);

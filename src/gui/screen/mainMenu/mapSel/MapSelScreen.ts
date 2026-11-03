@@ -2,7 +2,7 @@ import { jsx } from "@/gui/jsx/jsx";
 import { HtmlView } from "@/gui/jsx/HtmlView";
 import { MapSel, SortType } from "@/gui/screen/mainMenu/mapSel/component/MapSel";
 import { MapPreviewRenderer } from "@/gui/screen/mainMenu/lobby/MapPreviewRenderer";
-import { DownloadError } from "@/network/HttpRequest";
+import { DownloadError, ResourceNotFoundError } from "@/network/HttpRequest";
 import { Task } from "@puzzl/core/lib/async/Task";
 import { CancellationTokenSource, OperationCanceledError, CancellationToken } from "@puzzl/core/lib/async/cancellation";
 import { MainMenuScreen } from "@/gui/screen/mainMenu/MainMenuScreen";
@@ -446,7 +446,9 @@ export class MapSelScreen extends MainMenuScreen {
             }
             catch (error) {
                 if (error instanceof DownloadError) {
-                    this.errorHandler.handle(error, this.strings.get("TXT_DOWNLOAD_FAILED"), () => {
+                    this.errorHandler.handle(error, error instanceof ResourceNotFoundError
+                        ? `地图加载失败：${error.message}`
+                        : this.strings.get("TXT_DOWNLOAD_FAILED"), () => {
                         this.controller?.popScreen();
                     });
                     return;

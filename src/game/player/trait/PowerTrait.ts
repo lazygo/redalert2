@@ -60,10 +60,7 @@ export class PowerTrait {
                 powerDelta = powerValue;
             }
             else if (action === 'update' || action === 'remove') {
-                const oldPowerValue = this.powerByObject.get(object);
-                if (oldPowerValue === undefined) {
-                    throw new Error("Cannot update power before add.");
-                }
+                const oldPowerValue = this.powerByObject.get(object) ?? 0;
                 if (action === 'update') {
                     const newPowerValue = Math.ceil((power * object.healthTrait.health) / 100);
                     this.powerByObject.set(object, newPowerValue);

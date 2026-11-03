@@ -71,7 +71,7 @@ export class TransportTrait {
                 if (world.map.terrain.getPassableSpeed(transport.tile, unit.rules.speedType, unit.isInfantry(), transport.onBridge) > 0) {
                     unit.owner.addOwnedObject(unit);
                     unit.position.tileElevation = transport.onBridge
-                        ? world.map.tileOccupation.getBridgeOnTile(transport.tile).tileElevation
+                        ? world.map.tileOccupation.getBridgeOnTile(transport.tile)?.tileElevation ?? 0
                         : 0;
                     unit.onBridge = transport.onBridge;
                     unit.zone = world.map.getTileZone(transport.tile, !transport.onBridge);

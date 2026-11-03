@@ -180,7 +180,8 @@ export class WeaponTargeting {
             case LandTargeting.LandSecondary:
                 return weaponType === WeaponType.Secondary;
             default:
-                throw new Error(`Unhandled LandTargeting value "${landTargeting}"`);
+                console.warn(`Unhandled LandTargeting value "${landTargeting}". Falling back to LandOk.`);
+                return true;
         }
     }
     private canTargetNaval(navalTargeting: NavalTargeting, shooter: GameObject, target?: GameObject, weaponType?: WeaponType): boolean {
@@ -209,7 +210,8 @@ export class WeaponTargeting {
             case NavalTargeting.NavalNone:
                 return false;
             default:
-                throw new Error(`Unhandled NavalTargeting value "${navalTargeting}"`);
+                console.warn(`Unhandled NavalTargeting value "${navalTargeting}". Falling back to NavalAll.`);
+                return true;
         }
     }
 }
