@@ -1,7 +1,8 @@
 import { ObjectType } from '@/engine/type/ObjectType';
+import { SideType } from '@/game/SideType';
 interface CountryRules {
     id: string;
-    side: string;
+    side: SideType;
     name: string;
     multiplay: boolean;
     multiplayPassive: boolean;
@@ -21,7 +22,7 @@ export class Country {
     get id(): string {
         return this.rules.id;
     }
-    get side(): string {
+    get side(): SideType {
         return this.rules.side;
     }
     get name(): string {

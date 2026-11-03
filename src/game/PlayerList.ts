@@ -1,4 +1,5 @@
 import { Player } from './Player';
+import { SideType } from './SideType';
 export class PlayerList {
     private players: Player[] = [];
     addPlayer(player: Player): void {
@@ -31,7 +32,7 @@ export class PlayerList {
         return this.players.filter(p => !p.isNeutral);
     }
     getCivilian(): Player | undefined {
-        return this.players.find(p => p.country?.side === 'Civilian');
+        return this.players.find(p => p.country?.side === SideType.Civilian);
     }
     getAll(): Player[] {
         return this.players;
