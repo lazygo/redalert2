@@ -114,7 +114,8 @@ export class WeaponTargeting {
                     target?.isTechno() &&
                     alliances!.areFriendly(target, this.gameObject)));
             }
-            this.targetChecks.push((target, context, alliances) => !(target?.isTechno() &&
+            this.targetChecks.push((target, context, alliances, forcefire) => !(!forcefire &&
+                target?.isTechno() &&
                 target.cloakableTrait?.isCloaked() &&
                 !alliances!.alliances.haveSharedIntel(this.gameObject.owner, target.owner)));
             if (this.weaponRules.limboLaunch) {
